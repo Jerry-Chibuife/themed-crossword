@@ -192,16 +192,27 @@ function buildPuzzleFromPlacements(
 ): Puzzle {
   const cells: (string | null)[] = Array.from({ length: size * size }, () => null);
 
+  // One placement per answer — guards against accidental duplicate words.
+  const uniquePlacements: Placement[] = [];
+  const seenAnswers = new Set<string>();
   for (const p of placements) {
+    if (seenAnswers.has(p.answer)) continue;
+    seenAnswers.add(p.answer);
+    uniquePlacements.push(p);
+  }
+
+  for (const p of uniquePlacements) {
     placeWord(cells, p.answer, p.row, p.col, p.dir, size);
   }
 
-  // Mark blocks: any cell that is not a letter stays null (block).
-  // Letters already set; empties remain null.
-
-  const clueByAnswer = new Map(
-    placements.map((p) => [p.answer, p.clue] as const),
-  );
+  // Number only cells that start an intentional placement (not accidental letter runs).
+  const acrossByStart = new Map<string, Placement>();
+  const downByStart = new Map<string, Placement>();
+  for (const p of uniquePlacements) {
+    const key = `${p.row},${p.col}`;
+    if (p.dir === "across") acrossByStart.set(key, p);
+    else downByStart.set(key, p);
+  }
 
   let nextNum = 1;
   const across: ClueEntry[] = [];
@@ -209,55 +220,37 @@ function buildPuzzleFromPlacements(
 
   for (let row = 0; row < size; row++) {
     for (let col = 0; col < size; col++) {
-      const cell = cells[idx(row, col, size)];
-      if (cell === null) continue;
-
-      const startAcross =
-        (col === 0 || cells[idx(row, col - 1, size)] === null) &&
-        col + 1 < size &&
-        cells[idx(row, col + 1, size)] !== null;
-      const startDown =
-        (row === 0 || cells[idx(row - 1, col, size)] === null) &&
-        row + 1 < size &&
-        cells[idx(row + 1, col, size)] !== null;
-
-      if (!startAcross && !startDown) continue;
+      const key = `${row},${col}`;
+      const acrossPlacement = acrossByStart.get(key);
+      const downPlacement = downByStart.get(key);
+      if (!acrossPlacement && !downPlacement) continue;
 
       const num = nextNum++;
 
-      if (startAcross) {
-        let answer = "";
-        let c = col;
-        while (c < size && cells[idx(row, c, size)] !== null) {
-          answer += cells[idx(row, c, size)];
-          c += 1;
-        }
+      if (acrossPlacement) {
         across.push({
           num,
           row,
           col,
-          answer,
-          clue: clueByAnswer.get(answer) ?? answer,
+          answer: acrossPlacement.answer,
+          clue: acrossPlacement.clue,
         });
       }
 
-      if (startDown) {
-        let answer = "";
-        let r = row;
-        while (r < size && cells[idx(r, col, size)] !== null) {
-          answer += cells[idx(r, col, size)];
-          r += 1;
-        }
+      if (downPlacement) {
         down.push({
           num,
           row,
           col,
-          answer,
-          clue: clueByAnswer.get(answer) ?? answer,
+          answer: downPlacement.answer,
+          clue: downPlacement.clue,
         });
       }
     }
   }
+
+  across.sort((a, b) => a.num - b.num);
+  down.sort((a, b) => a.num - b.num);
 
   return {
     topic,
@@ -375,7 +368,8 @@ export function packCrossword(
       state.best = placed.map((p) => ({ ...p }));
     }
 
-    if (placed.length >= Math.min(pool.length, 28)) {
+    // Keep searching until we clear the minimum with a little headroom.
+    if (placed.length >= Math.min(pool.length, Math.max(minWords + 3, 18))) {
       return true;
     }
 
@@ -444,10 +438,25 @@ export function packCrossword(
   }
 
   const finalPlacements = state.best;
-  if (finalPlacements === null || finalPlacements.length < 5) {
+  if (finalPlacements === null || finalPlacements.length < minWords) {
     return null;
   }
 
   const puzzle = buildPuzzleFromPlacements(topic, size, finalPlacements);
-  return trimGrid(puzzle);
+  const trimmed = trimGrid(puzzle);
+  const placedCount =
+    trimmed.clues.across.length + trimmed.clues.down.length;
+  if (placedCount < minWords) {
+    return null;
+  }
+
+  const answers = [
+    ...trimmed.clues.across.map((c) => c.answer),
+    ...trimmed.clues.down.map((c) => c.answer),
+  ];
+  if (new Set(answers).size !== answers.length) {
+    return null;
+  }
+
+  return trimmed;
 }

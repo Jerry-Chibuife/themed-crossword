@@ -4,7 +4,7 @@ import { normalizeClues } from "@/lib/clues/normalize";
 import { packFromBank } from "@/lib/crossword/pack-from-bank";
 
 export const runtime = "nodejs";
-export const maxDuration = 15;
+export const maxDuration = 30;
 
 export async function POST(request: Request) {
   let body: ReturnType<typeof packBodySchema.parse>;

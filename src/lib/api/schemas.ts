@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { clueCandidateSchema } from "@/lib/clues/schema";
 
+export const MIN_PUZZLE_WORDS = 15;
+
 export const topicBodySchema = z.object({
   topic: z.string().trim().min(1).max(120),
   notes: z.string().trim().max(2000).optional().default(""),
@@ -12,11 +14,15 @@ export const topicBodySchema = z.object({
 export const packBodySchema = z.object({
   topic: z.string().trim().min(1).max(120),
   difficulty: z.enum(["easy", "medium", "hard"]).optional().default("medium"),
-  clues: z.array(clueCandidateSchema).min(8).max(28),
+  clues: z.array(clueCandidateSchema).min(MIN_PUZZLE_WORDS).max(40),
 });
 
 export function difficultyParams(difficulty: "easy" | "medium" | "hard") {
-  const minWords = difficulty === "easy" ? 6 : difficulty === "hard" ? 10 : 8;
-  const size = difficulty === "easy" ? 13 : 15;
+  // Always at least 15 playable entries; harder → denser grid target.
+  const minWords = Math.max(
+    MIN_PUZZLE_WORDS,
+    difficulty === "hard" ? 18 : MIN_PUZZLE_WORDS,
+  );
+  const size = difficulty === "easy" ? 15 : difficulty === "hard" ? 19 : 17;
   return { minWords, size };
 }

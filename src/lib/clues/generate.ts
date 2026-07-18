@@ -6,10 +6,10 @@ import type { ClueCandidate } from "@/lib/crossword/types";
 
 /** Absolute ceiling for the clues function. */
 const LLM_TIMEOUT_MS = 50_000;
-/** Ask the model for this many lines. */
-const REQUEST_CLUE_COUNT = 16;
-/** Stop streaming as soon as we have this many valid clues. */
-const MIN_CLUES = 12;
+/** Ask the model for this many lines (headroom so packer can place ≥15). */
+const REQUEST_CLUE_COUNT = 28;
+/** Stop streaming as soon as we have this many unique valid clues. */
+const MIN_CLUES = 24;
 
 function buildPrompt(topic: string, notes: string): string {
   const notesBlock = notes
@@ -30,7 +30,8 @@ Rules:
 - answer: letters A-Z only after dropping spaces/punctuation, length 3-12.
 - Prefer single words; multi-word phrases omit spaces (e.g. BRIDGEFOUR).
 - clue: max 50 characters, crossword-style; avoid major spoilers.
-- Tightly related to the topic; no duplicate answers.
+- Tightly related to the topic.
+- No duplicate answers — every answer string must be unique.
 - Prefer mid-length answers (4-8 letters).
 - Start emitting lines immediately. No preamble.`;
 }
@@ -103,7 +104,7 @@ export async function generateClueBank(
       model: getNvidiaLanguageModel(),
       prompt: buildPrompt(topic, notes),
       temperature: 0.4,
-      maxOutputTokens: 900,
+      maxOutputTokens: 1400,
       abortSignal: controller.signal,
     });
 
