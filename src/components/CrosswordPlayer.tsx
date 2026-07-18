@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ClueList } from "@/components/ClueList";
 import { CrosswordGrid } from "@/components/CrosswordGrid";
 import {
@@ -41,11 +41,17 @@ export function CrosswordPlayer({
   const [mobileTab, setMobileTab] = useState<Direction>("across");
   const [checked, setChecked] = useState(false);
   const [complete, setComplete] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const activeClue = useMemo(
     () => getClueAt(puzzle, selected.row, selected.col, direction),
     [puzzle, selected, direction],
   );
+
+  function focusInput() {
+    // Soft keyboards only open when a real text field is focused.
+    inputRef.current?.focus({ preventScroll: true });
+  }
 
   useEffect(() => {
     saveSession({ puzzle, userGrid, updatedAt: Date.now() });
@@ -53,115 +59,105 @@ export function CrosswordPlayer({
   }, [puzzle, userGrid]);
 
   useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
+    focusInput();
+  }, [selected, direction]);
 
-      if (event.key === "Tab") {
-        event.preventDefault();
-        setDirection((d) => (d === "across" ? "down" : "across"));
-        return;
-      }
+  function move(delta: 1 | -1) {
+    const next = nextOpenCell(
+      puzzle,
+      selected.row,
+      selected.col,
+      direction,
+      delta,
+    );
+    if (next) setSelected(next);
+  }
 
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        if (direction !== "across") setDirection("across");
-        else move(1);
-        return;
-      }
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        if (direction !== "across") setDirection("across");
-        else move(-1);
-        return;
-      }
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        if (direction !== "down") setDirection("down");
-        else move(1);
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        if (direction !== "down") setDirection("down");
-        else move(-1);
-        return;
-      }
+  function writeLetter(letter: string) {
+    const i = selected.row * puzzle.size + selected.col;
+    if (puzzle.grid[i] === null) return;
+    setUserGrid((prev) => {
+      const next = [...prev];
+      next[i] = letter;
+      return next;
+    });
+    setChecked(false);
+  }
 
-      if (event.key === "Backspace") {
-        event.preventDefault();
-        writeLetter("");
-        const prev = nextOpenCell(
-          puzzle,
-          selected.row,
-          selected.col,
-          direction,
-          -1,
-        );
-        if (prev) setSelected(prev);
-        return;
-      }
-
-      if (/^[a-zA-Z]$/.test(event.key)) {
-        event.preventDefault();
-        writeLetter(event.key.toUpperCase());
-        const next = nextOpenCell(
-          puzzle,
-          selected.row,
-          selected.col,
-          direction,
-          1,
-        );
-        if (next) setSelected(next);
-      }
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      setDirection((d) => (d === "across" ? "down" : "across"));
+      return;
     }
 
-    function move(delta: 1 | -1) {
-      const next = nextOpenCell(
-        puzzle,
-        selected.row,
-        selected.col,
-        direction,
-        delta,
-      );
-      if (next) setSelected(next);
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      if (direction !== "across") setDirection("across");
+      else move(1);
+      return;
+    }
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      if (direction !== "across") setDirection("across");
+      else move(-1);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (direction !== "down") setDirection("down");
+      else move(1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (direction !== "down") setDirection("down");
+      else move(-1);
+      return;
     }
 
-    function writeLetter(letter: string) {
-      const i = selected.row * puzzle.size + selected.col;
-      if (puzzle.grid[i] === null) return;
-      setUserGrid((prev) => {
-        const next = [...prev];
-        next[i] = letter;
-        return next;
-      });
-      setChecked(false);
+    if (event.key === "Backspace" || event.key === "Delete") {
+      event.preventDefault();
+      writeLetter("");
+      move(-1);
+      return;
     }
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [direction, puzzle, selected]);
+    if (/^[a-zA-Z]$/.test(event.key)) {
+      event.preventDefault();
+      writeLetter(event.key.toUpperCase());
+      move(1);
+    }
+  }
+
+  /** Mobile soft keyboards often deliver letters via input events, not keydown. */
+  function handleInput(event: React.FormEvent<HTMLInputElement>) {
+    const value = event.currentTarget.value;
+    event.currentTarget.value = "";
+    if (!value) return;
+
+    const letter = value.slice(-1);
+    if (/^[a-zA-Z]$/.test(letter)) {
+      writeLetter(letter.toUpperCase());
+      move(1);
+    }
+  }
 
   function handleSelectCell(row: number, col: number) {
     if (puzzle.grid[row * puzzle.size + col] === null) return;
     if (selected.row === row && selected.col === col) {
       setDirection((d) => (d === "across" ? "down" : "across"));
-      return;
+    } else {
+      setSelected({ row, col });
     }
-    setSelected({ row, col });
+    focusInput();
   }
 
   function handleSelectClue(clue: ClueEntry, dir: Direction) {
     setDirection(dir);
     setMobileTab(dir);
     setSelected({ row: clue.row, col: clue.col });
+    focusInput();
   }
 
   function revealLetter() {
@@ -173,6 +169,7 @@ export function CrosswordPlayer({
       next[i] = solution;
       return next;
     });
+    focusInput();
   }
 
   function revealWord() {
@@ -185,6 +182,7 @@ export function CrosswordPlayer({
       }
       return next;
     });
+    focusInput();
   }
 
   return (
@@ -208,7 +206,14 @@ export function CrosswordPlayer({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-secondary" onClick={() => setChecked(true)}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              setChecked(true);
+              focusInput();
+            }}
+          >
             Check
           </button>
           <button type="button" className="btn-secondary" onClick={revealLetter}>
@@ -232,8 +237,38 @@ export function CrosswordPlayer({
         </div>
       ) : null}
 
+      {/*
+        Hidden field keeps the mobile soft keyboard open. Letters are shown in
+        the grid cells; this input only captures keystrokes.
+      */}
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="text"
+        enterKeyHint="done"
+        autoCapitalize="characters"
+        autoCorrect="off"
+        autoComplete="off"
+        spellCheck={false}
+        aria-label="Type letters into the crossword"
+        className="crossword-hidden-input"
+        onKeyDown={handleKeyDown}
+        onInput={handleInput}
+        onBlur={() => {
+          // If the user taps a cell again, focus returns via onSelect.
+        }}
+      />
+
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-        <div className="flex justify-center lg:justify-start">
+        <div
+          className="flex justify-center lg:justify-start"
+          onMouseDown={(event) => {
+            // Keep focus on the hidden input when tapping grid cells (desktop + mobile).
+            if ((event.target as HTMLElement).closest("button")) {
+              event.preventDefault();
+            }
+          }}
+        >
           <CrosswordGrid
             puzzle={puzzle}
             userGrid={userGrid}
@@ -251,7 +286,10 @@ export function CrosswordPlayer({
             activeNum={activeClue?.num ?? null}
             onSelect={handleSelectClue}
             mobileTab={mobileTab}
-            onMobileTabChange={setMobileTab}
+            onMobileTabChange={(dir) => {
+              setMobileTab(dir);
+              focusInput();
+            }}
           />
         </div>
       </div>

@@ -111,6 +111,24 @@ body {
   }
 }
 
+/* Captures mobile soft-keyboard input without showing a visible field. */
+.crossword-hidden-input {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  opacity: 0.01;
+  border: 0;
+  color: transparent;
+  caret-color: transparent;
+  background: transparent;
+  outline: none;
+  z-index: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .progress-bar,
   .btn-primary,
