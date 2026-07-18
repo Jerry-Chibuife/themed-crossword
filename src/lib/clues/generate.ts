@@ -1,15 +1,20 @@
 import { streamText } from "ai";
+import { MIN_PUZZLE_WORDS } from "@/lib/api/schemas";
 import { getNvidiaLanguageModel } from "@/lib/ai/nvidia";
 import { normalizeClues } from "@/lib/clues/normalize";
 import { clueCandidateSchema } from "@/lib/clues/schema";
 import type { ClueCandidate } from "@/lib/crossword/types";
 
 /** Absolute ceiling for the clues function. */
-const LLM_TIMEOUT_MS = 50_000;
-/** Ask the model for this many lines (headroom so packer can place ≥15). */
-const REQUEST_CLUE_COUNT = 28;
-/** Stop streaming as soon as we have this many unique valid clues. */
-const MIN_CLUES = 24;
+const LLM_TIMEOUT_MS = 52_000;
+/** Ask the model for this many entries. */
+const REQUEST_CLUE_COUNT = 22;
+/**
+ * Hard minimum to return success — enough for a 15-word puzzle.
+ * Soft stop aborts early once we have packing headroom.
+ */
+const MIN_ACCEPT = MIN_PUZZLE_WORDS;
+const SOFT_STOP = 20;
 
 function buildPrompt(topic: string, notes: string): string {
   const notesBlock = notes
@@ -36,42 +41,126 @@ Rules:
 - Start emitting lines immediately. No preamble.`;
 }
 
-function parseClueLine(line: string): ClueCandidate | null {
-  const trimmed = line.trim();
-  if (!trimmed || trimmed[0] !== "{") return null;
-
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start === -1 || end <= start) return null;
-
-  try {
-    const raw = JSON.parse(trimmed.slice(start, end + 1)) as unknown;
-    const parsed = clueCandidateSchema.safeParse(raw);
-    if (!parsed.success) return null;
-    const [normalized] = normalizeClues([parsed.data]);
-    return normalized ?? null;
-  } catch {
-    return null;
-  }
+function parseClueObject(raw: unknown): ClueCandidate | null {
+  const parsed = clueCandidateSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const [normalized] = normalizeClues([parsed.data]);
+  return normalized ?? null;
 }
 
-function extractCluesFromBuffer(buffer: string): {
-  clues: ClueCandidate[];
-  rest: string;
-} {
-  const lines = buffer.split("\n");
-  const rest = lines.pop() ?? "";
+/** Pull every top-level `{...}` object from text (NDJSON or messy model output). */
+function extractObjectsFromText(text: string): ClueCandidate[] {
+  const out: ClueCandidate[] = [];
   const seen = new Set<string>();
-  const clues: ClueCandidate[] = [];
+  let i = 0;
 
-  for (const line of lines) {
-    const clue = parseClueLine(line);
-    if (!clue || seen.has(clue.answer)) continue;
-    seen.add(clue.answer);
-    clues.push(clue);
+  while (i < text.length) {
+    if (text[i] !== "{") {
+      i += 1;
+      continue;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+
+    for (let j = i; j < text.length; j++) {
+      const ch = text[j]!;
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === "\\") {
+          escaped = true;
+        } else if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === "{") depth += 1;
+      if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          end = j;
+          break;
+        }
+      }
+    }
+
+    if (end === -1) break;
+
+    const slice = text.slice(i, end + 1);
+    i = end + 1;
+
+    try {
+      const raw = JSON.parse(slice) as unknown;
+      // Skip wrapper objects like {"clues":[...]}
+      if (
+        raw &&
+        typeof raw === "object" &&
+        !Array.isArray(raw) &&
+        "clues" in (raw as object)
+      ) {
+        const nested = (raw as { clues: unknown }).clues;
+        if (Array.isArray(nested)) {
+          for (const item of nested) {
+            const clue = parseClueObject(item);
+            if (!clue || seen.has(clue.answer)) continue;
+            seen.add(clue.answer);
+            out.push(clue);
+          }
+        }
+        continue;
+      }
+
+      const clue = parseClueObject(raw);
+      if (!clue || seen.has(clue.answer)) continue;
+      seen.add(clue.answer);
+      out.push(clue);
+    } catch {
+      // keep scanning
+    }
   }
 
-  return { clues, rest };
+  // Array fallback: {"clues":[...]} or [{...}, ...]
+  if (out.length < MIN_ACCEPT) {
+    const startArr = text.indexOf("[");
+    const endArr = text.lastIndexOf("]");
+    if (startArr !== -1 && endArr > startArr) {
+      try {
+        const arr = JSON.parse(text.slice(startArr, endArr + 1)) as unknown;
+        if (Array.isArray(arr)) {
+          for (const item of arr) {
+            const clue = parseClueObject(item);
+            if (!clue || seen.has(clue.answer)) continue;
+            seen.add(clue.answer);
+            out.push(clue);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return out;
+}
+
+function mergeClues(
+  into: ClueCandidate[],
+  seen: Set<string>,
+  next: ClueCandidate[],
+): void {
+  for (const clue of next) {
+    if (seen.has(clue.answer)) continue;
+    seen.add(clue.answer);
+    into.push(clue);
+  }
 }
 
 function isAbortError(error: unknown): boolean {
@@ -84,8 +173,8 @@ function isAbortError(error: unknown): boolean {
 }
 
 /**
- * Stream NDJSON clues from NVIDIA and abort early once we have enough.
- * Waiting for a full JSON blob was timing out on Vercel’s 60s limit.
+ * Stream clues from NVIDIA and accept as soon as we have enough unique answers.
+ * Tolerates NDJSON or messy JSON; soft-stops at SOFT_STOP, requires MIN_ACCEPT.
  */
 export async function generateClueBank(
   topic: string,
@@ -97,48 +186,37 @@ export async function generateClueBank(
   const collected: ClueCandidate[] = [];
   const seen = new Set<string>();
   let buffer = "";
-  let reachedMin = false;
+  let reachedSoftStop = false;
 
   try {
     const result = streamText({
       model: getNvidiaLanguageModel(),
       prompt: buildPrompt(topic, notes),
       temperature: 0.4,
-      maxOutputTokens: 1400,
+      maxOutputTokens: 1200,
       abortSignal: controller.signal,
     });
 
     for await (const chunk of result.textStream) {
       buffer += chunk;
-      const { clues, rest } = extractCluesFromBuffer(buffer);
-      buffer = rest;
+      mergeClues(collected, seen, extractObjectsFromText(buffer));
 
-      for (const clue of clues) {
-        if (seen.has(clue.answer)) continue;
-        seen.add(clue.answer);
-        collected.push(clue);
-      }
-
-      if (collected.length >= MIN_CLUES) {
-        reachedMin = true;
+      if (collected.length >= SOFT_STOP) {
+        reachedSoftStop = true;
         controller.abort();
         break;
       }
     }
 
-    if (collected.length < MIN_CLUES && buffer.trim()) {
-      const clue = parseClueLine(buffer);
-      if (clue && !seen.has(clue.answer)) {
-        collected.push(clue);
-      }
-    }
+    mergeClues(collected, seen, extractObjectsFromText(buffer));
   } catch (error) {
-    // Early abort after MIN_CLUES is success; timeout with too few clues is failure.
-    if (reachedMin || collected.length >= MIN_CLUES) {
-      // keep collected
+    mergeClues(collected, seen, extractObjectsFromText(buffer));
+
+    if (reachedSoftStop || collected.length >= MIN_ACCEPT) {
+      // Success path — early abort or timeout after we cleared the floor.
     } else if (isAbortError(error)) {
       throw new Error(
-        `Clue generation timed out with only ${collected.length} clues. Try again.`,
+        `Clue generation timed out with only ${collected.length} clues (need ${MIN_ACCEPT}). Try again.`,
       );
     } else {
       throw error instanceof Error
@@ -149,9 +227,9 @@ export async function generateClueBank(
     clearTimeout(timeout);
   }
 
-  if (collected.length < MIN_CLUES) {
+  if (collected.length < MIN_ACCEPT) {
     throw new Error(
-      `Only ${collected.length} valid clues generated (need ${MIN_CLUES}). Try again.`,
+      `Only ${collected.length} valid clues generated (need ${MIN_ACCEPT}). Try again.`,
     );
   }
 

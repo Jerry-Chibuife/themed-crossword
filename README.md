@@ -53,7 +53,7 @@ Until `NVIDIA_API_KEY` is set, the deployed app uses the fixture clue bank.
 ## Flow
 
 1. Enter a topic (+ optional notes)
-2. `POST /api/clues` — MiniMax streams NDJSON clues; we stop after ~12 valid ones
+2. `POST /api/clues` — MiniMax streams clues; we accept ≥15 unique answers (soft-stop ~20)
 3. `POST /api/pack` — packer places interlocking answers on a grid
 4. Solve in the browser (check / reveal / resume)
 
