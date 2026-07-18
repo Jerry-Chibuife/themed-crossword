@@ -102,7 +102,7 @@ export const STORMIGHT_FIXTURE_CLEAN: ClueCandidate[] = [
   { answer: "SPANREED", clue: "Paired pens for distant writing" },
   { answer: "FABRIAL", clue: "Device powered by trapped spren" },
   { answer: "CHULL", clue: "Large crustacean beast of burden" },
-  { answer: "AXEHUND", clue: "Domesticated crustacean companion" },
+  { answer: "AXEHOUND", clue: "Domesticated crustacean companion" },
   { answer: "CREMLING", clue: "Small scavenging crustacean" },
   { answer: "LASHING", clue: "Windrunner ability that changes gravity" },
 ];

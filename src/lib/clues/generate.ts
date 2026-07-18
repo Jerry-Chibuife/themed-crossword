@@ -4,6 +4,9 @@ import { normalizeClues } from "@/lib/clues/normalize";
 import { clueBankSchema } from "@/lib/clues/schema";
 import type { ClueCandidate } from "@/lib/crossword/types";
 
+/** Leave headroom under Vercel's 60s function limit for packing. */
+const LLM_TIMEOUT_MS = 40_000;
+
 function extractJsonObject(text: string): unknown {
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -29,12 +32,14 @@ Return ONLY valid JSON with this exact shape:
 {"clues":[{"answer":"WORD","clue":"short clue text"}, ...]}
 
 Rules:
-- Provide 45-60 clue objects.
-- "answer" must be a single crossword entry: letters A-Z only after normalization, length 3-12. Prefer single words; multi-word phrases may omit spaces (e.g. BRIDGEFOUR).
-- "clue" max 80 characters, crossword-style, no spoilers for major plot twists when the topic is fiction.
+- Provide exactly 32 clue objects (no more).
+- "answer" must be letters A-Z only after dropping spaces/punctuation, length 3-12.
+- Prefer single words; multi-word phrases may omit spaces (e.g. BRIDGEFOUR).
+- "clue" max 60 characters, crossword-style; avoid major spoilers for fiction.
 - Answers must be tightly related to the topic.
 - No duplicate answers.
-- Prefer mid-length answers (4-8 letters) with varied letters for interlocking.
+- Prefer mid-length answers (4-8 letters) with varied letters.
+- Do not include chain-of-thought; output JSON only.
 ${repairHint ? `\nPrevious output was invalid: ${repairHint}. Fix and return JSON only.` : ""}`;
 }
 
@@ -42,12 +47,14 @@ async function requestClueBank(
   topic: string,
   notes: string,
   repairHint?: string,
+  timeoutMs = LLM_TIMEOUT_MS,
 ): Promise<ClueCandidate[]> {
   const { text } = await generateText({
     model: getNvidiaLanguageModel(),
     prompt: buildPrompt(topic, notes, repairHint),
-    temperature: 0.7,
-    maxOutputTokens: 4096,
+    temperature: 0.4,
+    maxOutputTokens: 1600,
+    abortSignal: AbortSignal.timeout(timeoutMs),
   });
 
   const parsed = extractJsonObject(text);
@@ -59,6 +66,8 @@ export async function generateClueBank(
   topic: string,
   notes: string,
 ): Promise<ClueCandidate[]> {
+  const started = Date.now();
+
   try {
     const clues = await requestClueBank(topic, notes);
     if (clues.length < 12) {
@@ -66,8 +75,22 @@ export async function generateClueBank(
     }
     return clues;
   } catch (error) {
+    const elapsed = Date.now() - started;
+    const remaining = LLM_TIMEOUT_MS - elapsed;
+    // Only repair if we still have meaningful budget; otherwise surface the error.
+    if (remaining < 12_000) {
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new Error(
+          "Clue generation timed out. Try again, or use a shorter topic/notes.",
+        );
+      }
+      throw error instanceof Error
+        ? error
+        : new Error("Failed to generate clues");
+    }
+
     const hint = error instanceof Error ? error.message : "invalid response";
-    const clues = await requestClueBank(topic, notes, hint);
+    const clues = await requestClueBank(topic, notes, hint, remaining);
     if (clues.length < 12) {
       throw new Error("Clue bank too small after repair");
     }

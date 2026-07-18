@@ -6,7 +6,7 @@ export const clueCandidateSchema = z.object({
 });
 
 export const clueBankSchema = z.object({
-  clues: z.array(clueCandidateSchema).min(10).max(80),
+  clues: z.array(clueCandidateSchema).min(10).max(40),
 });
 
 export type ClueBank = z.infer<typeof clueBankSchema>;

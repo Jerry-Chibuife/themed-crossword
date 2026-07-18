@@ -5,7 +5,7 @@ Generate and play crossword puzzles themed to any topic — books, films, indust
 ## Stack
 
 - Next.js (App Router) + TypeScript + Tailwind
-- Vercel AI SDK → NVIDIA NIM (`deepseek-ai/deepseek-v4-flash` by default)
+- Vercel AI SDK → NVIDIA NIM (`minimaxai/minimax-m3` by default)
 - In-repo crossword packer (backtracking)
 - `localStorage` resume (no accounts)
 
@@ -23,7 +23,8 @@ Without `NVIDIA_API_KEY`, `/api/generate` falls back to a Stormlight-themed fixt
 Optional:
 
 ```bash
-NVIDIA_MODEL=minimaxai/minimax-m3
+# Optional override (default is minimaxai/minimax-m3)
+NVIDIA_MODEL=deepseek-ai/deepseek-v4-flash
 ```
 
 ## Repo
@@ -39,7 +40,7 @@ Vercel is linked to this GitHub repo: pushes to `main` deploy production; other 
 Add env vars in the Vercel project settings (Production + Preview):
 
 - `NVIDIA_API_KEY` — required for live LLM clue generation
-- `NVIDIA_MODEL` — optional (`deepseek-ai/deepseek-v4-flash` default, or `minimaxai/minimax-m3`)
+- `NVIDIA_MODEL` — optional (`minimaxai/minimax-m3` default; e.g. `deepseek-ai/deepseek-v4-flash`)
 
 Until `NVIDIA_API_KEY` is set, the deployed app uses the fixture clue bank.
 

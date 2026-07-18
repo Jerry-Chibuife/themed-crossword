@@ -58,14 +58,14 @@ export async function POST(request: Request) {
     puzzle = packCrossword(body.topic, candidates, {
       size,
       minWords,
-      timeBudgetMs: 2800,
+      timeBudgetMs: 2000,
     });
     if (!puzzle) {
       // One shrink retry
       puzzle = packCrossword(body.topic, candidates, {
         size: Math.max(11, size - 2),
         minWords: Math.max(5, minWords - 2),
-        timeBudgetMs: 2200,
+        timeBudgetMs: 1500,
       });
     }
   } catch (error) {
