@@ -6,6 +6,8 @@ import { STORMIGHT_FIXTURE_CLEAN } from "@/lib/crossword/fixtures";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+/** Prefer US East — closer to NVIDIA NIM for most keys. */
+export const preferredRegion = "iad1";
 
 export async function POST(request: Request) {
   let body: ReturnType<typeof topicBodySchema.parse>;

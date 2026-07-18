@@ -12,7 +12,7 @@ export const topicBodySchema = z.object({
 export const packBodySchema = z.object({
   topic: z.string().trim().min(1).max(120),
   difficulty: z.enum(["easy", "medium", "hard"]).optional().default("medium"),
-  clues: z.array(clueCandidateSchema).min(8).max(40),
+  clues: z.array(clueCandidateSchema).min(8).max(28),
 });
 
 export function difficultyParams(difficulty: "easy" | "medium" | "hard") {
