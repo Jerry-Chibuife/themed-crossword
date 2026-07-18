@@ -26,11 +26,15 @@ Optional:
 NVIDIA_MODEL=minimaxai/minimax-m3
 ```
 
+## Repo
+
+https://github.com/Jerry-Chibuife/themed-crossword
+
 ## Deploy
 
 Production: https://themed-crossword.vercel.app
 
-Vercel project: `themed-crossword` (`prj_EvY8rm4hqP4MicqqRTemB54POG7j`)
+Vercel is linked to this GitHub repo: pushes to `main` deploy production; other branches get previews.
 
 Add env vars in the Vercel project settings (Production + Preview):
 
@@ -38,8 +42,6 @@ Add env vars in the Vercel project settings (Production + Preview):
 - `NVIDIA_MODEL` — optional (`deepseek-ai/deepseek-v4-flash` default, or `minimaxai/minimax-m3`)
 
 Until `NVIDIA_API_KEY` is set, the deployed app uses the fixture clue bank.
-
-If the deployment is SSO-protected on your Vercel team, open it while logged into Vercel or disable Deployment Protection for the project.
 
 ## Scripts
 
