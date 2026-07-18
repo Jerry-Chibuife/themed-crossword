@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Themed Crossword
 
-## Getting Started
+Generate and play crossword puzzles themed to any topic — books, films, industries, languages, or cultures.
 
-First, run the development server:
+## Stack
+
+- Next.js (App Router) + TypeScript + Tailwind
+- Vercel AI SDK → NVIDIA NIM (`deepseek-ai/deepseek-v4-flash` by default)
+- In-repo crossword packer (backtracking)
+- `localStorage` resume (no accounts)
+
+## Setup
 
 ```bash
+npm install
+cp .env.example .env.local
+# Add NVIDIA_API_KEY from https://build.nvidia.com
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Without `NVIDIA_API_KEY`, `/api/generate` falls back to a Stormlight-themed fixture word bank so you can still exercise packing and play UX.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Optional:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+NVIDIA_MODEL=minimaxai/minimax-m3
+```
 
-## Learn More
+## Deploy
 
-To learn more about Next.js, take a look at the following resources:
+Production: https://themed-crossword.vercel.app
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Vercel project: `themed-crossword` (`prj_EvY8rm4hqP4MicqqRTemB54POG7j`)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Add env vars in the Vercel project settings (Production + Preview):
 
-## Deploy on Vercel
+- `NVIDIA_API_KEY` — required for live LLM clue generation
+- `NVIDIA_MODEL` — optional (`deepseek-ai/deepseek-v4-flash` default, or `minimaxai/minimax-m3`)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Until `NVIDIA_API_KEY` is set, the deployed app uses the fixture clue bank.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+If the deployment is SSO-protected on your Vercel team, open it while logged into Vercel or disable Deployment Protection for the project.
+
+## Scripts
+
+- `npm run dev` — local server
+- `npm run build` / `npm start` — production
+- `npm test` — packer + normalize tests
+
+## Flow
+
+1. Enter a topic (+ optional notes)
+2. LLM builds a clue bank via NVIDIA
+3. Packer places interlocking answers on a grid
+4. Solve in the browser (check / reveal / resume)
