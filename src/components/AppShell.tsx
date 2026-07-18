@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { CrosswordPlayer } from "@/components/CrosswordPlayer";
 import { TopicForm } from "@/components/TopicForm";
+import {
+  MAX_CLUE_TOPUPS,
+  MIN_PUZZLE_WORDS,
+} from "@/lib/api/schemas";
 import type { ClueCandidate, Puzzle } from "@/lib/crossword/types";
 import { clearSession, loadSession } from "@/lib/storage";
 
@@ -12,7 +16,7 @@ type CluesResponse =
   | {
       topic: string;
       clues: ClueCandidate[];
-      meta?: { usedFixture?: boolean };
+      meta?: { usedFixture?: boolean; clueCount?: number; partial?: boolean };
     }
   | { error: string; stage?: string };
 
@@ -20,12 +24,52 @@ type PackResponse =
   | { puzzle: Puzzle; meta?: { placed?: number } }
   | { error: string; stage?: string };
 
+function mergeUnique(
+  existing: ClueCandidate[],
+  incoming: ClueCandidate[],
+): ClueCandidate[] {
+  const seen = new Set(existing.map((c) => c.answer));
+  const out = [...existing];
+  for (const clue of incoming) {
+    const answer = clue.answer.toUpperCase().replace(/[^A-Z]/g, "");
+    if (answer.length < 3 || seen.has(answer)) continue;
+    seen.add(answer);
+    out.push({ ...clue, answer });
+  }
+  return out;
+}
+
+async function fetchClueBatch(input: {
+  topic: string;
+  notes: string;
+  exclude: string[];
+  count: number;
+}): Promise<ClueCandidate[]> {
+  const response = await fetch("/api/clues", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const data = (await response.json()) as CluesResponse;
+
+  if (!response.ok || !("clues" in data)) {
+    const message =
+      "error" in data
+        ? data.error
+        : "Something went wrong gathering clues.";
+    throw new Error(message);
+  }
+
+  return data.clues;
+}
+
 export function AppShell() {
   const [phase, setPhase] = useState<Phase>("create");
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [userGrid, setUserGrid] = useState<(string | null)[] | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Gathering clues…");
+  const [detail, setDetail] = useState("Asking the model for themed answers.");
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -42,31 +86,57 @@ export function AppShell() {
     setError(null);
     setPhase("generating");
     setStatus("Gathering clues…");
+    setDetail("Asking the model for themed answers.");
 
     try {
-      const cluesRes = await fetch("/api/clues", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
-      });
-      const cluesData = (await cluesRes.json()) as CluesResponse;
+      let clues: ClueCandidate[] = [];
 
-      if (!cluesRes.ok || !("clues" in cluesData)) {
-        const message =
-          "error" in cluesData
-            ? cluesData.error
-            : "Something went wrong gathering clues.";
-        throw new Error(message);
+      // First pass + up to MAX_CLUE_TOPUPS more rounds (each gets its own time budget).
+      for (let round = 0; round <= MAX_CLUE_TOPUPS; round++) {
+        if (clues.length >= MIN_PUZZLE_WORDS) break;
+
+        const needed = MIN_PUZZLE_WORDS - clues.length;
+        const count = Math.min(20, Math.max(needed + 3, 8));
+
+        if (round === 0) {
+          setStatus("Gathering clues…");
+          setDetail("Asking the model for themed answers.");
+        } else {
+          setStatus("Gathering more clues…");
+          setDetail(
+            `Have ${clues.length} of ${MIN_PUZZLE_WORDS} — requesting ${count} more.`,
+          );
+        }
+
+        const batch = await fetchClueBatch({
+          topic: values.topic,
+          notes: values.notes,
+          exclude: clues.map((c) => c.answer),
+          count,
+        });
+
+        const before = clues.length;
+        clues = mergeUnique(clues, batch);
+
+        // Top-up returned nothing new — stop looping.
+        if (clues.length === before && round > 0) break;
+      }
+
+      if (clues.length < MIN_PUZZLE_WORDS) {
+        throw new Error(
+          `Only collected ${clues.length} unique clues (need ${MIN_PUZZLE_WORDS}). Try again.`,
+        );
       }
 
       setStatus("Building grid…");
+      setDetail("Fitting answers into an interlocking grid.");
 
       const packRes = await fetch("/api/pack", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: cluesData.topic,
-          clues: cluesData.clues,
+          topic: values.topic,
+          clues,
           difficulty: "medium",
         }),
       });
@@ -123,11 +193,7 @@ export function AppShell() {
           <p className="font-[family-name:var(--font-display)] text-3xl text-[var(--ink)]">
             {status}
           </p>
-          <p className="mt-3 text-[var(--ink-muted)]">
-            {status === "Gathering clues…"
-              ? "Asking the model for themed answers."
-              : "Fitting answers into an interlocking grid."}
-          </p>
+          <p className="mt-3 text-[var(--ink-muted)]">{detail}</p>
           <div className="mx-auto mt-8 h-1 w-40 overflow-hidden rounded-full bg-black/10">
             <div className="progress-bar h-full w-1/2 rounded-full bg-[var(--accent)]" />
           </div>

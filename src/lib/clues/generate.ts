@@ -1,37 +1,46 @@
 import { streamText } from "ai";
-import { MIN_PUZZLE_WORDS } from "@/lib/api/schemas";
 import { getNvidiaLanguageModel } from "@/lib/ai/nvidia";
 import { normalizeClues } from "@/lib/clues/normalize";
 import { clueCandidateSchema } from "@/lib/clues/schema";
 import type { ClueCandidate } from "@/lib/crossword/types";
 
-/** Absolute ceiling for the clues function. */
 const LLM_TIMEOUT_MS = 52_000;
-/** Ask the model for this many entries. */
-const REQUEST_CLUE_COUNT = 22;
-/**
- * Hard minimum to return success — enough for a 15-word puzzle.
- * Soft stop aborts early once we have packing headroom.
- */
-const MIN_ACCEPT = MIN_PUZZLE_WORDS;
-const SOFT_STOP = 20;
 
-function buildPrompt(topic: string, notes: string): string {
+export type GenerateClueOptions = {
+  /** Answers the model must not reuse. */
+  exclude?: string[];
+  /** How many new clues to request. */
+  count?: number;
+  /** Abort stream early once we have this many new clues. */
+  softStop?: number;
+};
+
+function buildPrompt(
+  topic: string,
+  notes: string,
+  count: number,
+  exclude: string[],
+): string {
   const notesBlock = notes
     ? `\nGrounding notes from the user (prefer these facts):\n${notes}\n`
     : "";
 
+  const excludeBlock =
+    exclude.length > 0
+      ? `\nDo NOT use any of these answers (already used):\n${exclude.join(", ")}\n`
+      : "";
+
   return `Generate crossword clue entries for a themed puzzle.
 
 Topic: ${topic}
-${notesBlock}
+${notesBlock}${excludeBlock}
 Output format — STRICT:
 - Return ONLY newline-delimited JSON (NDJSON).
 - One clue object per line. No array wrapper. No markdown fences. No commentary.
 - Exactly this shape per line: {"answer":"WORD","clue":"short clue"}
 
 Rules:
-- Emit ${REQUEST_CLUE_COUNT} lines as fast as possible.
+- Emit ${count} lines as fast as possible.
 - answer: letters A-Z only after dropping spaces/punctuation, length 3-12.
 - Prefer single words; multi-word phrases omit spaces (e.g. BRIDGEFOUR).
 - clue: max 50 characters, crossword-style; avoid major spoilers.
@@ -48,7 +57,6 @@ function parseClueObject(raw: unknown): ClueCandidate | null {
   return normalized ?? null;
 }
 
-/** Pull every top-level `{...}` object from text (NDJSON or messy model output). */
 function extractObjectsFromText(text: string): ClueCandidate[] {
   const out: ClueCandidate[] = [];
   const seen = new Set<string>();
@@ -99,7 +107,6 @@ function extractObjectsFromText(text: string): ClueCandidate[] {
 
     try {
       const raw = JSON.parse(slice) as unknown;
-      // Skip wrapper objects like {"clues":[...]}
       if (
         raw &&
         typeof raw === "object" &&
@@ -127,8 +134,7 @@ function extractObjectsFromText(text: string): ClueCandidate[] {
     }
   }
 
-  // Array fallback: {"clues":[...]} or [{...}, ...]
-  if (out.length < MIN_ACCEPT) {
+  if (out.length === 0) {
     const startArr = text.indexOf("[");
     const endArr = text.lastIndexOf("]");
     if (startArr !== -1 && endArr > startArr) {
@@ -155,9 +161,10 @@ function mergeClues(
   into: ClueCandidate[],
   seen: Set<string>,
   next: ClueCandidate[],
+  exclude: Set<string>,
 ): void {
   for (const clue of next) {
-    if (seen.has(clue.answer)) continue;
+    if (exclude.has(clue.answer) || seen.has(clue.answer)) continue;
     seen.add(clue.answer);
     into.push(clue);
   }
@@ -172,66 +179,81 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
+export type GenerateClueResult = {
+  clues: ClueCandidate[];
+  timedOut: boolean;
+};
+
 /**
- * Stream clues from NVIDIA and accept as soon as we have enough unique answers.
- * Tolerates NDJSON or messy JSON; soft-stops at SOFT_STOP, requires MIN_ACCEPT.
+ * Stream clues from NVIDIA. Returns whatever unique new clues we got —
+ * including a partial batch on timeout — so the client can top up.
  */
 export async function generateClueBank(
   topic: string,
   notes: string,
-): Promise<ClueCandidate[]> {
+  options: GenerateClueOptions = {},
+): Promise<GenerateClueResult> {
+  const excludeList = normalizeClues(
+    (options.exclude ?? []).map((answer) => ({ answer, clue: answer })),
+  ).map((c) => c.answer);
+  const exclude = new Set(excludeList);
+
+  const count = options.count ?? 20;
+  const softStop = options.softStop ?? Math.min(count, 18);
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
 
   const collected: ClueCandidate[] = [];
   const seen = new Set<string>();
   let buffer = "";
+  let timedOut = false;
   let reachedSoftStop = false;
 
   try {
     const result = streamText({
       model: getNvidiaLanguageModel(),
-      prompt: buildPrompt(topic, notes),
+      prompt: buildPrompt(topic, notes, count, excludeList),
       temperature: 0.4,
-      maxOutputTokens: 1200,
+      maxOutputTokens: Math.min(1200, 80 * count),
       abortSignal: controller.signal,
     });
 
     for await (const chunk of result.textStream) {
       buffer += chunk;
-      mergeClues(collected, seen, extractObjectsFromText(buffer));
+      mergeClues(
+        collected,
+        seen,
+        extractObjectsFromText(buffer),
+        exclude,
+      );
 
-      if (collected.length >= SOFT_STOP) {
+      if (collected.length >= softStop) {
         reachedSoftStop = true;
         controller.abort();
         break;
       }
     }
 
-    mergeClues(collected, seen, extractObjectsFromText(buffer));
+    mergeClues(collected, seen, extractObjectsFromText(buffer), exclude);
   } catch (error) {
-    mergeClues(collected, seen, extractObjectsFromText(buffer));
+    mergeClues(collected, seen, extractObjectsFromText(buffer), exclude);
 
-    if (reachedSoftStop || collected.length >= MIN_ACCEPT) {
-      // Success path — early abort or timeout after we cleared the floor.
+    if (reachedSoftStop) {
+      // intentional early stop
     } else if (isAbortError(error)) {
-      throw new Error(
-        `Clue generation timed out with only ${collected.length} clues (need ${MIN_ACCEPT}). Try again.`,
-      );
-    } else {
+      timedOut = true;
+    } else if (collected.length === 0) {
       throw error instanceof Error
         ? error
         : new Error("Failed to generate clues");
+    } else {
+      // Non-abort error but we have some clues — return partial.
+      timedOut = true;
     }
   } finally {
     clearTimeout(timeout);
   }
 
-  if (collected.length < MIN_ACCEPT) {
-    throw new Error(
-      `Only ${collected.length} valid clues generated (need ${MIN_ACCEPT}). Try again.`,
-    );
-  }
-
-  return collected;
+  return { clues: collected, timedOut };
 }

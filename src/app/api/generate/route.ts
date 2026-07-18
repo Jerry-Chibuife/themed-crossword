@@ -27,9 +27,21 @@ export async function POST(request: Request) {
 
   let candidates;
   try {
-    candidates = canUseNvidia
-      ? await generateClueBank(body.topic, body.notes)
-      : normalizeClues(STORMIGHT_FIXTURE_CLEAN);
+    if (canUseNvidia) {
+      const result = await generateClueBank(body.topic, body.notes);
+      candidates = result.clues;
+      if (candidates.length < 15) {
+        return NextResponse.json(
+          {
+            error: `Only ${candidates.length} clues from one-shot generate; use the UI flow instead.`,
+            stage: "clues",
+          },
+          { status: 500 },
+        );
+      }
+    } else {
+      candidates = normalizeClues(STORMIGHT_FIXTURE_CLEAN);
+    }
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to generate clues";

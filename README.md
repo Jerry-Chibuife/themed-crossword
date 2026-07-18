@@ -53,9 +53,7 @@ Until `NVIDIA_API_KEY` is set, the deployed app uses the fixture clue bank.
 ## Flow
 
 1. Enter a topic (+ optional notes)
-2. `POST /api/clues` — MiniMax streams clues; we accept ≥15 unique answers (soft-stop ~20)
-3. `POST /api/pack` — packer places interlocking answers on a grid
-4. Solve in the browser (check / reveal / resume)
-
-The UI drives those two steps separately so each gets its own serverless time budget.
-Clue generation streams line-by-line so a slow full JSON blob cannot burn the whole 60s.
+2. `POST /api/clues` — MiniMax streams a clue batch (partial OK on timeout)
+3. If under 15 unique clues, the UI calls `/api/clues` again (up to 2 top-ups), excluding answers already collected — each call gets its own time budget
+4. `POST /api/pack` — packer places interlocking answers on a grid
+5. Solve in the browser (check / reveal / resume)

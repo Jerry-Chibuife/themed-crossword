@@ -2,6 +2,8 @@ import { z } from "zod";
 import { clueCandidateSchema } from "@/lib/clues/schema";
 
 export const MIN_PUZZLE_WORDS = 15;
+/** Max extra /api/clues rounds after the first (client-driven). */
+export const MAX_CLUE_TOPUPS = 2;
 
 export const topicBodySchema = z.object({
   topic: z.string().trim().min(1).max(120),
@@ -9,6 +11,10 @@ export const topicBodySchema = z.object({
   difficulty: z.enum(["easy", "medium", "hard"]).optional().default("medium"),
   /** Dev/demo fallback when NVIDIA_API_KEY is missing */
   useFixture: z.boolean().optional().default(false),
+  /** Answers already collected — model must not repeat these. */
+  exclude: z.array(z.string().trim().max(16)).max(40).optional().default([]),
+  /** How many new clues to aim for in this call. */
+  count: z.number().int().min(4).max(28).optional(),
 });
 
 export const packBodySchema = z.object({
@@ -18,7 +24,6 @@ export const packBodySchema = z.object({
 });
 
 export function difficultyParams(difficulty: "easy" | "medium" | "hard") {
-  // Always at least 15 playable entries; harder → denser grid target.
   const minWords = Math.max(
     MIN_PUZZLE_WORDS,
     difficulty === "hard" ? 18 : MIN_PUZZLE_WORDS,
