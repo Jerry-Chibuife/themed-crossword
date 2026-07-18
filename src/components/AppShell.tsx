@@ -3,13 +3,21 @@
 import { useEffect, useState } from "react";
 import { CrosswordPlayer } from "@/components/CrosswordPlayer";
 import { TopicForm } from "@/components/TopicForm";
-import type { Puzzle } from "@/lib/crossword/types";
+import type { ClueCandidate, Puzzle } from "@/lib/crossword/types";
 import { clearSession, loadSession } from "@/lib/storage";
 
 type Phase = "create" | "generating" | "play";
 
-type GenerateResponse =
-  | { puzzle: Puzzle; meta?: { usedFixture?: boolean } }
+type CluesResponse =
+  | {
+      topic: string;
+      clues: ClueCandidate[];
+      meta?: { usedFixture?: boolean };
+    }
+  | { error: string; stage?: string };
+
+type PackResponse =
+  | { puzzle: Puzzle; meta?: { placed?: number } }
   | { error: string; stage?: string };
 
 export function AppShell() {
@@ -35,35 +43,49 @@ export function AppShell() {
     setPhase("generating");
     setStatus("Gathering clues…");
 
-    const statusTimer = window.setTimeout(() => {
-      setStatus("Building grid…");
-    }, 1200);
-
     try {
-      const response = await fetch("/api/generate", {
+      const cluesRes = await fetch("/api/clues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
-      const data = (await response.json()) as GenerateResponse;
+      const cluesData = (await cluesRes.json()) as CluesResponse;
 
-      if (!response.ok || !("puzzle" in data)) {
+      if (!cluesRes.ok || !("clues" in cluesData)) {
         const message =
-          "error" in data
-            ? data.error
-            : "Something went wrong generating the puzzle.";
-        const stage = "stage" in data && data.stage ? ` (${data.stage})` : "";
-        throw new Error(`${message}${stage}`);
+          "error" in cluesData
+            ? cluesData.error
+            : "Something went wrong gathering clues.";
+        throw new Error(message);
       }
 
-      setPuzzle(data.puzzle);
+      setStatus("Building grid…");
+
+      const packRes = await fetch("/api/pack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: cluesData.topic,
+          clues: cluesData.clues,
+          difficulty: "medium",
+        }),
+      });
+      const packData = (await packRes.json()) as PackResponse;
+
+      if (!packRes.ok || !("puzzle" in packData)) {
+        const message =
+          "error" in packData
+            ? packData.error
+            : "Something went wrong building the grid.";
+        throw new Error(message);
+      }
+
+      setPuzzle(packData.puzzle);
       setUserGrid(undefined);
       setPhase("play");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
       setPhase("create");
-    } finally {
-      window.clearTimeout(statusTimer);
     }
   }
 
@@ -102,7 +124,9 @@ export function AppShell() {
             {status}
           </p>
           <p className="mt-3 text-[var(--ink-muted)]">
-            Building a themed grid from your topic.
+            {status === "Gathering clues…"
+              ? "Asking the model for themed answers."
+              : "Fitting answers into an interlocking grid."}
           </p>
           <div className="mx-auto mt-8 h-1 w-40 overflow-hidden rounded-full bg-black/10">
             <div className="progress-bar h-full w-1/2 rounded-full bg-[var(--accent)]" />

@@ -3,12 +3,7 @@ import { topicBodySchema } from "@/lib/api/schemas";
 import { generateClueBank } from "@/lib/clues/generate";
 import { normalizeClues } from "@/lib/clues/normalize";
 import { STORMIGHT_FIXTURE_CLEAN } from "@/lib/crossword/fixtures";
-import { packFromBank } from "@/lib/crossword/pack-from-bank";
 
-/**
- * Legacy one-shot endpoint. Prefer /api/clues then /api/pack so the LLM
- * call and packing each get a clean function budget.
- */
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
@@ -25,36 +20,36 @@ export async function POST(request: Request) {
 
   const canUseNvidia = Boolean(process.env.NVIDIA_API_KEY) && !body.useFixture;
 
-  let candidates;
   try {
-    candidates = canUseNvidia
+    const clues = canUseNvidia
       ? await generateClueBank(body.topic, body.notes)
       : normalizeClues(STORMIGHT_FIXTURE_CLEAN);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to generate clues";
-    return NextResponse.json({ error: message, stage: "clues" }, { status: 500 });
-  }
-
-  try {
-    const puzzle = packFromBank(body.topic, candidates, body.difficulty);
-    if (!puzzle) {
-      return NextResponse.json(
-        { error: "Could not pack a crossword from the clue bank", stage: "pack" },
-        { status: 500 },
-      );
-    }
 
     return NextResponse.json({
-      puzzle,
+      topic: body.topic,
+      clues,
       meta: {
         usedFixture: !canUseNvidia,
-        clueCount: candidates.length,
+        model: canUseNvidia
+          ? process.env.NVIDIA_MODEL?.trim() || "minimaxai/minimax-m3"
+          : "fixture",
+        clueCount: clues.length,
       },
     });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to pack crossword";
-    return NextResponse.json({ error: message, stage: "pack" }, { status: 500 });
+      error instanceof Error ? error.message : "Failed to generate clues";
+    const timedOut =
+      error instanceof Error &&
+      (error.name === "TimeoutError" || /timed out/i.test(error.message));
+    return NextResponse.json(
+      {
+        error: timedOut
+          ? "Clue generation timed out. Try again with a shorter topic."
+          : message,
+        stage: "clues",
+      },
+      { status: timedOut ? 504 : 500 },
+    );
   }
 }

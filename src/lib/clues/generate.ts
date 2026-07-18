@@ -4,8 +4,9 @@ import { normalizeClues } from "@/lib/clues/normalize";
 import { clueBankSchema } from "@/lib/clues/schema";
 import type { ClueCandidate } from "@/lib/crossword/types";
 
-/** Leave headroom under Vercel's 60s function limit for packing. */
-const LLM_TIMEOUT_MS = 40_000;
+/** Hard stop so the clues function finishes under Vercel’s 60s cap. */
+const LLM_TIMEOUT_MS = 45_000;
+const TARGET_CLUE_COUNT = 20;
 
 function extractJsonObject(text: string): unknown {
   const trimmed = text.trim();
@@ -19,7 +20,7 @@ function extractJsonObject(text: string): unknown {
   return JSON.parse(candidate.slice(start, end + 1)) as unknown;
 }
 
-function buildPrompt(topic: string, notes: string, repairHint?: string): string {
+function buildPrompt(topic: string, notes: string): string {
   const notesBlock = notes
     ? `\nGrounding notes from the user (prefer these facts):\n${notes}\n`
     : "";
@@ -32,68 +33,43 @@ Return ONLY valid JSON with this exact shape:
 {"clues":[{"answer":"WORD","clue":"short clue text"}, ...]}
 
 Rules:
-- Provide exactly 32 clue objects (no more).
+- Provide exactly ${TARGET_CLUE_COUNT} clue objects (no more).
 - "answer" must be letters A-Z only after dropping spaces/punctuation, length 3-12.
 - Prefer single words; multi-word phrases may omit spaces (e.g. BRIDGEFOUR).
 - "clue" max 60 characters, crossword-style; avoid major spoilers for fiction.
 - Answers must be tightly related to the topic.
 - No duplicate answers.
 - Prefer mid-length answers (4-8 letters) with varied letters.
-- Do not include chain-of-thought; output JSON only.
-${repairHint ? `\nPrevious output was invalid: ${repairHint}. Fix and return JSON only.` : ""}`;
-}
-
-async function requestClueBank(
-  topic: string,
-  notes: string,
-  repairHint?: string,
-  timeoutMs = LLM_TIMEOUT_MS,
-): Promise<ClueCandidate[]> {
-  const { text } = await generateText({
-    model: getNvidiaLanguageModel(),
-    prompt: buildPrompt(topic, notes, repairHint),
-    temperature: 0.4,
-    maxOutputTokens: 1600,
-    abortSignal: AbortSignal.timeout(timeoutMs),
-  });
-
-  const parsed = extractJsonObject(text);
-  const bank = clueBankSchema.parse(parsed);
-  return normalizeClues(bank.clues);
+- Do not include chain-of-thought; output JSON only.`;
 }
 
 export async function generateClueBank(
   topic: string,
   notes: string,
 ): Promise<ClueCandidate[]> {
-  const started = Date.now();
+  const { text } = await generateText({
+    model: getNvidiaLanguageModel(),
+    prompt: buildPrompt(topic, notes),
+    temperature: 0.4,
+    maxOutputTokens: 1000,
+    abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+  });
 
+  let parsed: unknown;
   try {
-    const clues = await requestClueBank(topic, notes);
-    if (clues.length < 12) {
-      throw new Error(`Only ${clues.length} valid clues after normalize`);
-    }
-    return clues;
-  } catch (error) {
-    const elapsed = Date.now() - started;
-    const remaining = LLM_TIMEOUT_MS - elapsed;
-    // Only repair if we still have meaningful budget; otherwise surface the error.
-    if (remaining < 12_000) {
-      if (error instanceof Error && error.name === "TimeoutError") {
-        throw new Error(
-          "Clue generation timed out. Try again, or use a shorter topic/notes.",
-        );
-      }
-      throw error instanceof Error
-        ? error
-        : new Error("Failed to generate clues");
-    }
-
-    const hint = error instanceof Error ? error.message : "invalid response";
-    const clues = await requestClueBank(topic, notes, hint, remaining);
-    if (clues.length < 12) {
-      throw new Error("Clue bank too small after repair");
-    }
-    return clues;
+    parsed = extractJsonObject(text);
+  } catch {
+    throw new Error(
+      "Model returned invalid JSON. Try again with a shorter topic.",
+    );
   }
+
+  const bank = clueBankSchema.parse(parsed);
+  const clues = normalizeClues(bank.clues);
+
+  if (clues.length < 12) {
+    throw new Error(`Only ${clues.length} valid clues after normalize`);
+  }
+
+  return clues;
 }
