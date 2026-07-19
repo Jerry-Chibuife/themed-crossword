@@ -28,7 +28,7 @@ describe("packCrossword", () => {
 
   it("normalizes dirty fixture answers without duplicates", () => {
     const bank = normalizeClues(STORMIGHT_FIXTURE);
-    expect(bank.every((c) => /^[A-Z]{3,12}$/.test(c.answer))).toBe(true);
+    expect(bank.every((c) => /^[A-Z]{3,15}$/.test(c.answer))).toBe(true);
     expect(new Set(bank.map((c) => c.answer)).size).toBe(bank.length);
   });
 });

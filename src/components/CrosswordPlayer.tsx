@@ -192,7 +192,7 @@ export function CrosswordPlayer({
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--accent)]">
             Themed Crossword
           </p>
-          <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl tracking-tight text-[var(--ink)] md:text-4xl">
+          <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl tracking-tight text-[var(--ink)] md:text-4xl capitalize">
             {puzzle.topic}
           </h1>
           {activeClue ? (

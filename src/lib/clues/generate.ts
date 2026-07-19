@@ -41,12 +41,15 @@ Output format — STRICT:
 
 Rules:
 - Emit ${count} lines as fast as possible.
-- answer: letters A-Z only after dropping spaces/punctuation, length 3-12.
+- answer: letters A-Z only after dropping spaces/punctuation, length 3-15.
 - Prefer single words; multi-word phrases omit spaces (e.g. BRIDGEFOUR).
 - clue: max 50 characters, crossword-style; avoid major spoilers.
 - Tightly related to the topic.
 - No duplicate answers — every answer string must be unique.
-- Prefer mid-length answers (4-8 letters).
+- Keep FULL proper nouns and names. Never truncate or nickname them
+  (use OPPENHEIMER not OPPEN; KALADIN not KAL; DALINAR not DAL).
+- Do not invent abbreviations of real names just to make answers shorter.
+- Mid-length common nouns are fine; names must stay complete within 15 letters.
 - Start emitting lines immediately. No preamble.`;
 }
 

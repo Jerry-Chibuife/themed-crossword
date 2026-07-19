@@ -15,7 +15,7 @@ export function TopicForm({
 }: TopicFormProps) {
   return (
     <form
-      className="mx-auto flex w-full max-w-xl flex-col gap-5"
+      className="flex w-full max-w-xl flex-col gap-5"
       onSubmit={(event) => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);

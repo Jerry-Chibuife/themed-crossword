@@ -12,7 +12,7 @@ export const topicBodySchema = z.object({
   /** Dev/demo fallback when NVIDIA_API_KEY is missing */
   useFixture: z.boolean().optional().default(false),
   /** Answers already collected — model must not repeat these. */
-  exclude: z.array(z.string().trim().max(16)).max(40).optional().default([]),
+  exclude: z.array(z.string().trim().max(20)).max(40).optional().default([]),
   /** How many new clues to aim for in this call. */
   count: z.number().int().min(4).max(28).optional(),
 });

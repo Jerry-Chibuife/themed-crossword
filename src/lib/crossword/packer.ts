@@ -1,3 +1,4 @@
+import { ANSWER_PATTERN } from "@/lib/clues/limits";
 import type { ClueCandidate, ClueEntry, Direction, PackOptions, Puzzle } from "./types";
 
 type Placement = {
@@ -328,7 +329,7 @@ export function packCrossword(
   const started = Date.now();
 
   const sorted = [...candidates]
-    .filter((c) => /^[A-Z]{3,12}$/.test(c.answer))
+    .filter((c) => ANSWER_PATTERN.test(c.answer))
     .sort((a, b) => b.answer.length - a.answer.length || scoreCandidate(b) - scoreCandidate(a));
 
   if (sorted.length < minWords) return null;

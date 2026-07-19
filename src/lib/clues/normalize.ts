@@ -1,3 +1,7 @@
+import {
+  MAX_ANSWER_LENGTH,
+  MIN_ANSWER_LENGTH,
+} from "@/lib/clues/limits";
 import type { ClueCandidate } from "@/lib/crossword/types";
 
 function lettersOnly(raw: string): string {
@@ -17,7 +21,9 @@ export function normalizeClues(raw: ClueCandidate[]): ClueCandidate[] {
 
   for (const item of raw) {
     const answer = lettersOnly(item.answer);
-    if (answer.length < 3 || answer.length > 12) continue;
+    if (answer.length < MIN_ANSWER_LENGTH || answer.length > MAX_ANSWER_LENGTH) {
+      continue;
+    }
     if (seen.has(answer)) continue;
     seen.add(answer);
 
@@ -28,9 +34,7 @@ export function normalizeClues(raw: ClueCandidate[]): ClueCandidate[] {
   }
 
   out.sort((a, b) => {
-    const aMid = a.answer.length >= 4 && a.answer.length <= 8 ? 1 : 0;
-    const bMid = b.answer.length >= 4 && b.answer.length <= 8 ? 1 : 0;
-    if (bMid !== aMid) return bMid - aMid;
+    // Prefer variety / packability, but do not bias against full-length names.
     if (uniqueLetterScore(b.answer) !== uniqueLetterScore(a.answer)) {
       return uniqueLetterScore(b.answer) - uniqueLetterScore(a.answer);
     }
