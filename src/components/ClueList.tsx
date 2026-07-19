@@ -1,8 +1,12 @@
 "use client";
 
-import type { ClueEntry, Direction } from "@/lib/crossword/types";
+import { useMemo } from "react";
+import { getWordFillStatus } from "@/lib/crossword/helpers";
+import type { ClueEntry, Direction, Puzzle } from "@/lib/crossword/types";
 
 type ClueListProps = {
+  puzzle: Puzzle;
+  userGrid: (string | null)[];
   across: ClueEntry[];
   down: ClueEntry[];
   activeDir: Direction;
@@ -12,36 +16,60 @@ type ClueListProps = {
   onMobileTabChange: (dir: Direction) => void;
 };
 
+function clueStatusKey(dir: Direction, num: number): string {
+  return `${dir}:${num}`;
+}
+
 function ClueButton({
   clue,
   dir,
   active,
+  solved,
   onSelect,
 }: {
   clue: ClueEntry;
   dir: Direction;
   active: boolean;
+  solved: boolean;
   onSelect: (clue: ClueEntry, dir: Direction) => void;
 }) {
   return (
     <button
       type="button"
       onClick={() => onSelect(clue, dir)}
-      className={`w-full rounded-md px-2 py-1.5 text-left text-sm leading-snug transition-colors ${
-        active
-          ? "bg-[var(--accent-soft)] text-[var(--ink)]"
-          : "text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)]"
+      className={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm leading-snug transition-colors ${
+        solved
+          ? "text-[var(--ink-muted)]/55"
+          : active
+            ? "bg-[var(--accent-soft)] text-[var(--ink)]"
+            : "text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)]"
       }`}
     >
-      <span className="mr-2 font-[family-name:var(--font-display)] font-semibold text-[var(--ink)]">
+      <span
+        className={`mr-0 shrink-0 font-[family-name:var(--font-display)] font-semibold ${
+          solved ? "text-[var(--ink-muted)]/55" : "text-[var(--ink)]"
+        }`}
+      >
         {clue.num}.
       </span>
-      {clue.clue}
+      <span className="min-w-0 flex-1">
+        {clue.clue}
+        {solved ? (
+          <span
+            className="ml-1.5 inline-block align-middle text-[var(--success)]"
+            aria-label="Solved"
+          >
+            ✓
+          </span>
+        ) : null}
+      </span>
     </button>
   );
 }
 
 export function ClueList({
+  puzzle,
+  userGrid,
   across,
   down,
   activeDir,
@@ -50,6 +78,21 @@ export function ClueList({
   mobileTab,
   onMobileTabChange,
 }: ClueListProps) {
+  const solvedKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const clue of across) {
+      if (getWordFillStatus(puzzle, userGrid, clue, "across") === "correct") {
+        keys.add(clueStatusKey("across", clue.num));
+      }
+    }
+    for (const clue of down) {
+      if (getWordFillStatus(puzzle, userGrid, clue, "down") === "correct") {
+        keys.add(clueStatusKey("down", clue.num));
+      }
+    }
+    return keys;
+  }, [puzzle, userGrid, across, down]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-3 flex gap-2 md:hidden">
@@ -81,6 +124,7 @@ export function ClueList({
                   clue={clue}
                   dir="across"
                   active={activeDir === "across" && activeNum === clue.num}
+                  solved={solvedKeys.has(clueStatusKey("across", clue.num))}
                   onSelect={onSelect}
                 />
               </li>
@@ -98,6 +142,7 @@ export function ClueList({
                   clue={clue}
                   dir="down"
                   active={activeDir === "down" && activeNum === clue.num}
+                  solved={solvedKeys.has(clueStatusKey("down", clue.num))}
                   onSelect={onSelect}
                 />
               </li>
@@ -114,6 +159,7 @@ export function ClueList({
                 clue={clue}
                 dir={mobileTab}
                 active={activeDir === mobileTab && activeNum === clue.num}
+                solved={solvedKeys.has(clueStatusKey(mobileTab, clue.num))}
                 onSelect={onSelect}
               />
             </li>

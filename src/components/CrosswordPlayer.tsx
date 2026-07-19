@@ -280,6 +280,8 @@ export function CrosswordPlayer({
         </div>
         <div className="min-h-[280px] lg:h-[min(70vh,640px)]">
           <ClueList
+            puzzle={puzzle}
+            userGrid={userGrid}
             across={puzzle.clues.across}
             down={puzzle.clues.down}
             activeDir={direction}
