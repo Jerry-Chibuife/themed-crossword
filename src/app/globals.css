@@ -7,7 +7,10 @@
   --ink-muted: #5a6678;
   --accent: #0f6b6b;
   --accent-soft: #cfe8e6;
+  --success: #0f7a45;
+  --success-soft: #d5f0e3;
   --danger: #b42318;
+  --danger-soft: #f8d7d4;
   --background: var(--paper);
   --foreground: var(--ink);
 }

@@ -79,3 +79,48 @@ export function nextOpenCell(
   const next = cells[index + delta];
   return next ?? null;
 }
+
+export type WordFillStatus = "incomplete" | "correct" | "incorrect";
+
+/** Status of a clue once every cell in that word is filled. */
+export function getWordFillStatus(
+  puzzle: Puzzle,
+  userGrid: (string | null)[],
+  clue: ClueEntry,
+  dir: Direction,
+): WordFillStatus {
+  const cells = clueCells(clue, dir);
+  let allCorrect = true;
+
+  for (const cell of cells) {
+    const i = cell.row * puzzle.size + cell.col;
+    const value = (userGrid[i] ?? "").toUpperCase();
+    if (!value) return "incomplete";
+    if (value !== puzzle.grid[i]) allCorrect = false;
+  }
+
+  return allCorrect ? "correct" : "incorrect";
+}
+
+/**
+ * Cell color state from completed words through that cell.
+ * Incorrect wins over correct when across/down disagree.
+ */
+export function getCellWordStatus(
+  puzzle: Puzzle,
+  userGrid: (string | null)[],
+  row: number,
+  col: number,
+): "correct" | "incorrect" | null {
+  let sawCorrect = false;
+
+  for (const dir of ["across", "down"] as const) {
+    const clue = getClueAt(puzzle, row, col, dir);
+    if (!clue) continue;
+    const status = getWordFillStatus(puzzle, userGrid, clue, dir);
+    if (status === "incorrect") return "incorrect";
+    if (status === "correct") sawCorrect = true;
+  }
+
+  return sawCorrect ? "correct" : null;
+}
