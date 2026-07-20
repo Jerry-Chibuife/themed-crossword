@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { topicBodySchema } from "@/lib/api/schemas";
+import { MIN_PUZZLE_WORDS, topicBodySchema } from "@/lib/api/schemas";
 import { generateClueBank } from "@/lib/clues/generate";
 import { normalizeClues } from "@/lib/clues/normalize";
 import { STORMIGHT_FIXTURE_CLEAN } from "@/lib/crossword/fixtures";
@@ -28,9 +28,11 @@ export async function POST(request: Request) {
   let candidates;
   try {
     if (canUseNvidia) {
-      const result = await generateClueBank(body.topic, body.notes);
+      const result = await generateClueBank(body.topic, body.notes, {
+        count: 30,
+      });
       candidates = result.clues;
-      if (candidates.length < 15) {
+      if (candidates.length < MIN_PUZZLE_WORDS) {
         return NextResponse.json(
           {
             error: `Only ${candidates.length} clues from one-shot generate; use the UI flow instead.`,

@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   const exclude = normalizeClues(
     body.exclude.map((answer) => ({ answer, clue: answer })),
   ).map((c) => c.answer);
-  const count = body.count ?? (exclude.length > 0 ? 10 : 20);
+  const count = body.count ?? (exclude.length > 0 ? 12 : 30);
 
   try {
     if (!canUseNvidia) {
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     const { clues, timedOut } = await generateClueBank(body.topic, body.notes, {
       exclude,
       count,
-      softStop: Math.min(count, exclude.length > 0 ? count : 18),
+      softStop: count,
     });
 
     if (clues.length === 0) {

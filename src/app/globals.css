@@ -5,6 +5,7 @@
   --paper-deep: #dde7ee;
   --ink: #1a2332;
   --ink-muted: #5a6678;
+  --block: #b8c2ce;
   --accent: #0f6b6b;
   --accent-soft: #cfe8e6;
   --success: #0f7a45;
@@ -111,6 +112,30 @@ body {
   }
   100% {
     transform: translateX(180%);
+  }
+}
+
+.tip-fade {
+  transition: opacity 750ms ease-in-out;
+}
+
+.tip-fade-in {
+  opacity: 1;
+}
+
+.tip-fade-out {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip-fade {
+    transition: none;
+  }
+
+  .progress-bar {
+    animation: none;
+    transform: none;
+    width: 100%;
   }
 }
 

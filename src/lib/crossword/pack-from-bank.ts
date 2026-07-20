@@ -22,9 +22,8 @@ export function packFromBank(
   const { minWords, size } = difficultyParams(difficulty);
 
   const attempts: Array<{ size: number; timeBudgetMs: number }> = [
-    { size, timeBudgetMs: 3500 },
-    { size: size + 2, timeBudgetMs: 4000 },
-    { size: Math.max(size, 19), timeBudgetMs: 4500 },
+    { size, timeBudgetMs: 5000 },
+    { size: 21, timeBudgetMs: 6000 },
   ];
 
   for (const attempt of attempts) {

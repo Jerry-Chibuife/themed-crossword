@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { packBodySchema } from "@/lib/api/schemas";
+import { MIN_PUZZLE_WORDS, packBodySchema } from "@/lib/api/schemas";
 import { normalizeClues } from "@/lib/clues/normalize";
 import { packFromBank } from "@/lib/crossword/pack-from-bank";
 
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   }
 
   const candidates = normalizeClues(body.clues);
-  if (candidates.length < 8) {
+  if (candidates.length < MIN_PUZZLE_WORDS) {
     return NextResponse.json(
       { error: "Not enough valid clues to pack a puzzle", stage: "pack" },
       { status: 400 },

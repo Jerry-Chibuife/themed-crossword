@@ -201,8 +201,8 @@ export async function generateClueBank(
   ).map((c) => c.answer);
   const exclude = new Set(excludeList);
 
-  const count = options.count ?? 20;
-  const softStop = options.softStop ?? Math.min(count, 18);
+  const count = options.count ?? 30;
+  const softStop = options.softStop ?? count;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
@@ -218,7 +218,7 @@ export async function generateClueBank(
       model: getNvidiaLanguageModel(),
       prompt: buildPrompt(topic, notes, count, excludeList),
       temperature: 0.4,
-      maxOutputTokens: Math.min(1200, 80 * count),
+      maxOutputTokens: Math.min(2400, 80 * count),
       abortSignal: controller.signal,
     });
 

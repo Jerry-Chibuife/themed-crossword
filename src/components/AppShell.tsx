@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CrosswordPlayer } from "@/components/CrosswordPlayer";
+import { GeneratingWait } from "@/components/GeneratingWait";
 import { TopicForm } from "@/components/TopicForm";
 import {
   MAX_CLUE_TOPUPS,
@@ -96,7 +97,11 @@ export function AppShell() {
         if (clues.length >= MIN_PUZZLE_WORDS) break;
 
         const needed = MIN_PUZZLE_WORDS - clues.length;
-        const count = Math.min(20, Math.max(needed + 3, 8));
+        // First pass aims high so one round often clears 24; top-ups fill the gap.
+        const count =
+          round === 0
+            ? 30
+            : Math.min(36, Math.max(needed + 4, 10));
 
         if (round === 0) {
           setStatus("Gathering clues…");
@@ -186,20 +191,7 @@ export function AppShell() {
   }
 
   if (phase === "generating") {
-    return (
-      <main className="relative flex flex-1 flex-col items-center justify-center px-4 py-20">
-        <div className="atmosphere" aria-hidden />
-        <div className="relative z-10 text-center">
-          <p className="font-[family-name:var(--font-display)] text-3xl text-[var(--ink)]">
-            {status}
-          </p>
-          <p className="mt-3 text-[var(--ink-muted)]">{detail}</p>
-          <div className="mx-auto mt-8 h-1 w-40 overflow-hidden rounded-full bg-black/10">
-            <div className="progress-bar h-full w-1/2 rounded-full bg-[var(--accent)]" />
-          </div>
-        </div>
-      </main>
-    );
+    return <GeneratingWait status={status} detail={detail} />;
   }
 
   return (

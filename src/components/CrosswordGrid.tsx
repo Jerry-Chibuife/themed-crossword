@@ -71,6 +71,7 @@ export function CrosswordGrid({
               key={i}
               className="bg-[var(--ink)]"
               style={{ width: cellSize, height: cellSize }}
+              aria-hidden
             />
           );
         }

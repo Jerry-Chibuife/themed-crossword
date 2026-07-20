@@ -146,9 +146,18 @@ export function CrosswordPlayer({
   function handleSelectCell(row: number, col: number) {
     if (puzzle.grid[row * puzzle.size + col] === null) return;
     if (selected.row === row && selected.col === col) {
-      setDirection((d) => (d === "across" ? "down" : "across"));
+      const other: Direction = direction === "across" ? "down" : "across";
+      // Only toggle when this cell is part of a clue in the other direction.
+      if (getClueAt(puzzle, row, col, other)) {
+        setDirection(other);
+      }
     } else {
       setSelected({ row, col });
+      if (getClueAt(puzzle, row, col, "across")) {
+        setDirection("across");
+      } else if (getClueAt(puzzle, row, col, "down")) {
+        setDirection("down");
+      }
     }
     focusInput();
   }
@@ -278,7 +287,7 @@ export function CrosswordPlayer({
             onSelect={handleSelectCell}
           />
         </div>
-        <div className="min-h-[280px] lg:h-[min(70vh,640px)]">
+        <div className="min-h-[280px] lg:h-[calc(100dvh-11rem)] lg:min-h-0">
           <ClueList
             puzzle={puzzle}
             userGrid={userGrid}
