@@ -270,7 +270,7 @@ export function CrosswordPlayer({
 
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
         <div
-          className="flex justify-center lg:justify-start"
+          className="min-w-0 w-full max-w-full overflow-hidden"
           onMouseDown={(event) => {
             // Keep focus on the hidden input when tapping grid cells (desktop + mobile).
             if ((event.target as HTMLElement).closest("button")) {
@@ -287,7 +287,7 @@ export function CrosswordPlayer({
             onSelect={handleSelectCell}
           />
         </div>
-        <div className="min-h-[280px] lg:h-[calc(100dvh-11rem)] lg:min-h-0">
+        <div className="min-h-[280px] min-w-0 lg:h-[calc(100dvh-11rem)] lg:min-h-0">
           <ClueList
             puzzle={puzzle}
             userGrid={userGrid}

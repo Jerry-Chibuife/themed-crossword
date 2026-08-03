@@ -1,6 +1,7 @@
 import { streamText } from "ai";
 import { getNvidiaLanguageModel } from "@/lib/ai/nvidia";
-import { normalizeClues } from "@/lib/clues/normalize";
+import { MAX_ANSWER_LENGTH, MIN_ANSWER_LENGTH } from "@/lib/clues/limits";
+import { answersConflict, normalizeClues } from "@/lib/clues/normalize";
 import { clueCandidateSchema } from "@/lib/clues/schema";
 import type { ClueCandidate } from "@/lib/crossword/types";
 
@@ -41,15 +42,20 @@ Output format — STRICT:
 
 Rules:
 - Emit ${count} lines as fast as possible.
-- answer: letters A-Z only after dropping spaces/punctuation, length 3-15.
-- Prefer single words; multi-word phrases omit spaces (e.g. BRIDGEFOUR).
+- answer: letters A-Z only after dropping spaces/punctuation, length ${MIN_ANSWER_LENGTH}-${MAX_ANSWER_LENGTH}.
+- Multi-word titles: concatenate ALL words with no spaces (OLDTOWNROAD, UPTOWNFUNK, BRIDGEFOUR).
+  Never drop a word or syllable to shorten (not OLDTOWN, not UPTOFUNK).
+- If the full letters-only title/name is longer than ${MAX_ANSWER_LENGTH}, SKIP that entry.
+  Never truncate, nickname, abbreviate, or respell to fit.
+- Use correct standard spellings only. No phonetic/slang forms
+  (THUNDER not THUNDA; DYNAMITE not DYNAMIT; SHALLOW not SHALOW).
+- Answers must be primary entities of the topic. For song/chart topics: song titles —
+  not fan nicknames (not BELIEBER), not artists unless the topic is artists.
 - clue: max 50 characters, crossword-style; avoid major spoilers.
 - Tightly related to the topic.
-- No duplicate answers — every answer string must be unique.
-- Keep FULL proper nouns and names. Never truncate or nickname them
-  (use OPPENHEIMER not OPPEN; KALADIN not KAL; DALINAR not DAL).
-- Do not invent abbreviations of real names just to make answers shorter.
-- Mid-length common nouns are fine; names must stay complete within 15 letters.
+- No duplicate or near-duplicate answers for the same work under different spellings
+  (not both DESPACITO and DESPA; not both SHALLOW and SHALOW).
+- Keep FULL proper nouns and names (OPPENHEIMER not OPPEN; KALADIN not KAL).
 - Start emitting lines immediately. No preamble.`;
 }
 
@@ -168,6 +174,12 @@ function mergeClues(
 ): void {
   for (const clue of next) {
     if (exclude.has(clue.answer) || seen.has(clue.answer)) continue;
+    if ([...seen].some((existing) => answersConflict(clue.answer, existing))) {
+      continue;
+    }
+    if ([...exclude].some((existing) => answersConflict(clue.answer, existing))) {
+      continue;
+    }
     seen.add(clue.answer);
     into.push(clue);
   }
@@ -258,5 +270,5 @@ export async function generateClueBank(
     clearTimeout(timeout);
   }
 
-  return { clues: collected, timedOut };
+  return { clues: normalizeClues(collected), timedOut };
 }

@@ -8,6 +8,7 @@ import {
   MAX_CLUE_TOPUPS,
   MIN_PUZZLE_WORDS,
 } from "@/lib/api/schemas";
+import { normalizeClues } from "@/lib/clues/normalize";
 import type { ClueCandidate, Puzzle } from "@/lib/crossword/types";
 import { clearSession, loadSession } from "@/lib/storage";
 
@@ -29,15 +30,7 @@ function mergeUnique(
   existing: ClueCandidate[],
   incoming: ClueCandidate[],
 ): ClueCandidate[] {
-  const seen = new Set(existing.map((c) => c.answer));
-  const out = [...existing];
-  for (const clue of incoming) {
-    const answer = clue.answer.toUpperCase().replace(/[^A-Z]/g, "");
-    if (answer.length < 3 || seen.has(answer)) continue;
-    seen.add(answer);
-    out.push({ ...clue, answer });
-  }
-  return out;
+  return normalizeClues([...existing, ...incoming]);
 }
 
 async function fetchClueBatch(input: {
@@ -205,7 +198,7 @@ export function AppShell() {
           Crosswords for any world you name.
         </h1>
         <p className="mt-4 max-w-lg text-lg text-[var(--ink-muted)]">
-          Pick a book, film, industry, language, or culture — we craft interlocking
+          Tap a topic spark below, or bring your own world — we craft interlocking
           clues you can solve in the browser.
         </p>
         <div className="mt-10">
