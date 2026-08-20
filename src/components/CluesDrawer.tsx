@@ -99,7 +99,7 @@ export function CluesDrawer({
           </button>
         </div>
 
-        <div className="flex gap-1.5 px-2 pb-3">
+        <div className="mt-14 flex gap-1.5 px-2 pb-3">
           {(["across", "down"] as const).map((dir) => (
             <button
               key={dir}
