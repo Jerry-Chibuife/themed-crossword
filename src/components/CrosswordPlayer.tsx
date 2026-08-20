@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ClueList } from "@/components/ClueList";
+import { CluesDrawer } from "@/components/CluesDrawer";
 import { CrosswordGrid } from "@/components/CrosswordGrid";
 import {
   clueCells,
@@ -38,14 +39,18 @@ export function CrosswordPlayer({
   );
   const [selected, setSelected] = useState(() => firstLetterCell(puzzle));
   const [direction, setDirection] = useState<Direction>("across");
-  const [mobileTab, setMobileTab] = useState<Direction>("across");
+  const [drawerTab, setDrawerTab] = useState<Direction>("across");
+  const [cluesOpen, setCluesOpen] = useState(false);
   const [checked, setChecked] = useState(false);
-  const [complete, setComplete] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const activeClue = useMemo(
     () => getClueAt(puzzle, selected.row, selected.col, direction),
     [puzzle, selected, direction],
+  );
+  const complete = useMemo(
+    () => isPuzzleComplete(puzzle, userGrid),
+    [puzzle, userGrid],
   );
 
   function focusInput() {
@@ -55,7 +60,6 @@ export function CrosswordPlayer({
 
   useEffect(() => {
     saveSession({ puzzle, userGrid, updatedAt: Date.now() });
-    setComplete(isPuzzleComplete(puzzle, userGrid));
   }, [puzzle, userGrid]);
 
   useEffect(() => {
@@ -164,7 +168,7 @@ export function CrosswordPlayer({
 
   function handleSelectClue(clue: ClueEntry, dir: Direction) {
     setDirection(dir);
-    setMobileTab(dir);
+    setDrawerTab(dir);
     setSelected({ row: clue.row, col: clue.col });
     focusInput();
   }
@@ -214,8 +218,8 @@ export function CrosswordPlayer({
             </p>
           ) : null}
         </div>
-        {/* Below lg, clues stack under the grid — keep actions under the title. */}
-        <div className="flex flex-wrap gap-2">
+        {/* Below lg, clues use a drawer — keep actions under the title. */}
+        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
           <button
             type="button"
             className="btn-secondary"
@@ -234,6 +238,16 @@ export function CrosswordPlayer({
           </button>
           <button type="button" className="btn-primary" onClick={onNewPuzzle}>
             New puzzle
+          </button>
+          <button
+            type="button"
+            className="btn-secondary ml-auto lg:hidden"
+            onClick={() => {
+              setDrawerTab(direction);
+              setCluesOpen(true);
+            }}
+          >
+            Clues
           </button>
         </div>
       </header>
@@ -288,7 +302,7 @@ export function CrosswordPlayer({
             onSelect={handleSelectCell}
           />
         </div>
-        <div className="min-h-[280px] min-w-0 lg:h-[calc(100dvh-11rem)] lg:min-h-0">
+        <div className="hidden min-h-[280px] min-w-0 lg:block lg:h-[calc(100dvh-11rem)] lg:min-h-0">
           <ClueList
             puzzle={puzzle}
             userGrid={userGrid}
@@ -297,14 +311,26 @@ export function CrosswordPlayer({
             activeDir={direction}
             activeNum={activeClue?.num ?? null}
             onSelect={handleSelectClue}
-            mobileTab={mobileTab}
-            onMobileTabChange={(dir) => {
-              setMobileTab(dir);
-              focusInput();
-            }}
           />
         </div>
       </div>
+
+      <CluesDrawer
+        open={cluesOpen}
+        onClose={() => {
+          setCluesOpen(false);
+          focusInput();
+        }}
+        puzzle={puzzle}
+        userGrid={userGrid}
+        across={puzzle.clues.across}
+        down={puzzle.clues.down}
+        activeDir={direction}
+        activeNum={activeClue?.num ?? null}
+        tab={drawerTab}
+        onTabChange={setDrawerTab}
+        onSelect={handleSelectClue}
+      />
     </div>
   );
 }
