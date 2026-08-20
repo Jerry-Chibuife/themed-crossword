@@ -196,7 +196,7 @@ export function CrosswordPlayer({
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:py-10">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      <header className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--accent)]">
             Themed Crossword
@@ -214,6 +214,7 @@ export function CrosswordPlayer({
             </p>
           ) : null}
         </div>
+        {/* Below lg, clues stack under the grid — keep actions under the title. */}
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
