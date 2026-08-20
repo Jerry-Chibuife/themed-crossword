@@ -6,7 +6,10 @@ export const TOPIC_CATEGORIES = [
   "music",
   "places",
   "science",
+  "culture",
 ] as const;
+
+export const TOPIC_SPARK_COUNT = TOPIC_CATEGORIES.length;
 
 export type TopicCategory = (typeof TOPIC_CATEGORIES)[number];
 
@@ -17,7 +20,7 @@ export const topicSparkSchema = z.object({
 });
 
 export const topicSparksResponseSchema = z.object({
-  sparks: z.array(topicSparkSchema).length(5),
+  sparks: z.array(topicSparkSchema).length(TOPIC_SPARK_COUNT),
 });
 
 export type TopicSpark = z.infer<typeof topicSparkSchema>;
@@ -28,4 +31,5 @@ export const CATEGORY_LABELS: Record<TopicCategory, string> = {
   music: "Music",
   places: "Places",
   science: "Science",
+  culture: "Culture",
 };

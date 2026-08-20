@@ -1,17 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  isSparksCacheFresh,
-  loadSparksCacheStale,
-  saveSparksCache,
-} from "@/lib/topics/cache";
-import {
-  defaultFallbackSparks,
-  pickFallbackSparks,
-} from "@/lib/topics/fallback";
+import { saveSparksCache } from "@/lib/topics/cache";
+import { pickFallbackSparks } from "@/lib/topics/fallback";
 import {
   CATEGORY_LABELS,
+  TOPIC_SPARK_COUNT,
   type TopicSpark,
 } from "@/lib/topics/types";
 
@@ -26,10 +20,17 @@ type TopicsResponse = {
   meta?: { usedFixture?: boolean };
 };
 
+type LoadPhase = "loading" | "ready" | "reloading";
+
 async function fetchSparks(): Promise<TopicSpark[]> {
   const response = await fetch("/api/topics", { method: "POST" });
   const data = (await response.json()) as TopicsResponse;
-  if (!response.ok || !Array.isArray(data.sparks) || data.sparks.length !== 5) {
+  if (
+    !response.ok ||
+    !Array.isArray(data.sparks) ||
+    data.sparks.length !== TOPIC_SPARK_COUNT ||
+    data.meta?.usedFixture
+  ) {
     throw new Error("Failed to load topic sparks");
   }
   return data.sparks;
@@ -40,18 +41,14 @@ export function TopicSparks({
   onSelect,
   disabled = false,
 }: TopicSparksProps) {
-  const [sparks, setSparks] = useState<TopicSpark[]>(() => defaultFallbackSparks());
-  const [busy, setBusy] = useState(false);
+  const [sparks, setSparks] = useState<TopicSpark[]>([]);
+  const [phase, setPhase] = useState<LoadPhase>("loading");
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
-    const cached = loadSparksCacheStale();
-    if (cached) setSparks(cached);
-
-    if (isSparksCacheFresh()) return;
-
     let cancelled = false;
-    setBusy(true);
+
+    setPhase("loading");
     fetchSparks()
       .then((next) => {
         if (cancelled) return;
@@ -61,15 +58,14 @@ export function TopicSparks({
           if (cancelled) return;
           setSparks(next);
           setVisible(true);
+          setPhase("ready");
         }, 200);
       })
       .catch(() => {
-        if (!cancelled && !loadSparksCacheStale()) {
-          setSparks(pickFallbackSparks());
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setBusy(false);
+        if (cancelled) return;
+        setSparks(pickFallbackSparks());
+        setVisible(true);
+        setPhase("ready");
       });
 
     return () => {
@@ -77,9 +73,9 @@ export function TopicSparks({
     };
   }, []);
 
-  async function handleRefresh() {
-    if (busy || disabled) return;
-    setBusy(true);
+  async function handleReload() {
+    if (phase !== "ready" || disabled) return;
+    setPhase("reloading");
     try {
       const next = await fetchSparks();
       saveSparksCache(next);
@@ -87,13 +83,20 @@ export function TopicSparks({
       window.setTimeout(() => {
         setSparks(next);
         setVisible(true);
+        setPhase("ready");
       }, 200);
     } catch {
-      // keep current slate
-    } finally {
-      setBusy(false);
+      // Keep the current slate (AI or defaults).
+      setPhase("ready");
     }
   }
+
+  const buttonLabel =
+    phase === "loading"
+      ? "Loading"
+      : phase === "reloading"
+        ? "Reloading"
+        : "Reload";
 
   return (
     <div className="w-full">
@@ -109,50 +112,64 @@ export function TopicSparks({
         <button
           type="button"
           className="btn-secondary shrink-0 px-3 py-1.5 text-sm"
-          onClick={() => void handleRefresh()}
-          disabled={busy || disabled}
+          onClick={() => void handleReload()}
+          disabled={phase !== "ready" || disabled}
         >
-          {busy ? "Refreshing…" : "Refresh"}
+          {buttonLabel}
         </button>
       </div>
 
-      <ul
-        className={`tip-fade mt-4 flex flex-col gap-2 ${
-          visible ? "tip-fade-in" : "tip-fade-out"
-        }`}
-      >
-        {sparks.map((spark) => {
-          const selected = selectedLabel === spark.label;
-          return (
-            <li key={`${spark.category}:${spark.label}`}>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => onSelect(spark)}
-                className={`w-full rounded-md px-3 py-3 text-left transition-colors ${
-                  selected
-                    ? "bg-[var(--accent-soft)] text-[var(--ink)]"
-                    : "bg-white/50 text-[var(--ink)] hover:bg-black/5"
-                }`}
-              >
-                <span className="block font-[family-name:var(--font-display)] text-lg leading-snug tracking-tight">
-                  {spark.label}
-                </span>
-                <span className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--accent)]">
-                    {CATEGORY_LABELS[spark.category]}
+      {sparks.length > 0 ? (
+        <ul
+          className={`tip-fade mt-4 grid grid-cols-2 gap-2 ${
+            visible ? "tip-fade-in" : "tip-fade-out"
+          }`}
+        >
+          {sparks.map((spark) => {
+            const selected = selectedLabel === spark.label;
+            return (
+              <li key={`${spark.category}:${spark.label}`}>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onSelect(spark)}
+                  className={`h-full w-full rounded-md px-3 py-3 text-left transition-colors ${
+                    selected
+                      ? "bg-[var(--accent-soft)] text-[var(--ink)]"
+                      : "bg-white/50 text-[var(--ink)] hover:bg-black/5"
+                  }`}
+                >
+                  <span className="block font-[family-name:var(--font-display)] text-base leading-snug tracking-tight sm:text-lg">
+                    {spark.label}
                   </span>
-                  {spark.hook ? (
-                    <span className="text-sm text-[var(--ink-muted)]">
-                      {spark.hook}
+                  <span className="mt-1 flex flex-col gap-0.5">
+                    <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--accent)]">
+                      {CATEGORY_LABELS[spark.category]}
                     </span>
-                  ) : null}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+                    {spark.hook ? (
+                      <span className="text-sm text-[var(--ink-muted)]">
+                        {spark.hook}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div
+          className="mt-4 grid grid-cols-2 gap-2"
+          aria-hidden={phase !== "loading"}
+        >
+          {Array.from({ length: TOPIC_SPARK_COUNT }, (_, index) => (
+            <div
+              key={index}
+              className="min-h-[5.5rem] rounded-md bg-black/[0.04]"
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

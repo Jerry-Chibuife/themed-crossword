@@ -6,13 +6,14 @@ import {
   type TopicSpark,
 } from "@/lib/topics/types";
 
-const TOPIC_TIMEOUT_MS = 12_000;
+const TOPIC_TIMEOUT_MS = 16_000;
 
 function buildPrompt(): string {
   const cats = TOPIC_CATEGORIES.join(", ");
-  return `Generate exactly 5 crossword topic ideas for a themed puzzle app.
+  const count = TOPIC_CATEGORIES.length;
+  return `Generate exactly ${count} crossword topic ideas for a themed puzzle app.
 
-Return ONLY a JSON array of 5 objects. No markdown. No commentary.
+Return ONLY a JSON array of ${count} objects. No markdown. No commentary.
 Each object shape: {"label":"...","category":"...","hook":"..."}
 
 Categories (exactly one spark per category, in any order): ${cats}
@@ -22,7 +23,7 @@ Rules:
 - Prefer entity-rich themes (names, titles, places, terms) that can fill a 24-word crossword.
 - hook: one short tease, max 60 characters, optional grounding for clue generation.
 - Keep it fun and bold. No NSFW, no hate, no harassment of living private individuals.
-- Make the five labels feel distinct from each other.
+- Make the ${count} labels feel distinct from each other.
 
 Example labels: "Olympic villains & underdogs", "Stormlight Archive names", "Afrobeats heavyweights".`;
 }
@@ -65,7 +66,7 @@ export async function generateTopicSparks(): Promise<TopicSpark[]> {
       model: getNvidiaLanguageModel(),
       prompt: buildPrompt(),
       temperature: 0.9,
-      maxOutputTokens: 500,
+      maxOutputTokens: 650,
       abortSignal: controller.signal,
     });
 

@@ -1,7 +1,7 @@
 import type { TopicSpark } from "@/lib/topics/types";
 import { topicSparksResponseSchema } from "@/lib/topics/types";
 
-const STORAGE_KEY = "themed-crossword:sparks:v1";
+const STORAGE_KEY = "themed-crossword:sparks:v2";
 const TTL_MS = 6 * 60 * 60 * 1000;
 
 type SparksCache = {

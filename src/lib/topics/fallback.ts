@@ -140,6 +140,33 @@ const FALLBACK_BANK: Record<TopicCategory, TopicSpark[]> = {
       hook: "Fronts, jets, El Niño, and storm vocabulary",
     },
   ],
+  culture: [
+    {
+      label: "Korean street food lore",
+      category: "culture",
+      hook: "Tteokbokki, banchan, and late-night market bites",
+    },
+    {
+      label: "Yoruba festivals & rites",
+      category: "culture",
+      hook: "Odun, orisha, and celebration vocabulary",
+    },
+    {
+      label: "Japanese tea ceremony",
+      category: "culture",
+      hook: "Matcha, chawan, and quiet ritual details",
+    },
+    {
+      label: "Carnival costume traditions",
+      category: "culture",
+      hook: "Rio, Trinidad, and masquerade craft",
+    },
+    {
+      label: "Scandinavian hygge rituals",
+      category: "culture",
+      hook: "Candles, saunas, and cozy winter customs",
+    },
+  ],
 };
 
 function pickOne<T>(items: T[]): T {
