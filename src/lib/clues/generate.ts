@@ -6,12 +6,12 @@ import {
 } from "@/lib/ai/errors";
 import { getNvidiaLanguageModel } from "@/lib/ai/nvidia";
 import { MAX_ANSWER_LENGTH, MIN_ANSWER_LENGTH } from "@/lib/clues/limits";
-import { answersConflict, normalizeClues } from "@/lib/clues/normalize";
+import { answersConflict, normalizeClues, preferAnswer } from "@/lib/clues/normalize";
 import { clueCandidateSchema } from "@/lib/clues/schema";
 import type { ClueCandidate } from "@/lib/crossword/types";
 
-const LLM_TIMEOUT_MS = 52_000;
-const MAX_ATTEMPTS = 3;
+const LLM_TIMEOUT_MS = 22_000;
+const MAX_ATTEMPTS = 2;
 const RETRY_BASE_MS = 1_500;
 
 export type GenerateClueOptions = {
@@ -174,7 +174,7 @@ export function extractObjectsFromText(text: string): ClueCandidate[] {
   return out;
 }
 
-function mergeClues(
+export function mergeClues(
   into: ClueCandidate[],
   seen: Set<string>,
   next: ClueCandidate[],
@@ -182,14 +182,25 @@ function mergeClues(
 ): void {
   for (const clue of next) {
     if (exclude.has(clue.answer) || seen.has(clue.answer)) continue;
-    if ([...seen].some((existing) => answersConflict(clue.answer, existing))) {
-      continue;
-    }
     if ([...exclude].some((existing) => answersConflict(clue.answer, existing))) {
       continue;
     }
-    seen.add(clue.answer);
-    into.push(clue);
+
+    const conflictIndex = into.findIndex((existing) =>
+      answersConflict(clue.answer, existing.answer),
+    );
+    if (conflictIndex === -1) {
+      seen.add(clue.answer);
+      into.push(clue);
+      continue;
+    }
+
+    const current = into[conflictIndex]!;
+    const winner = preferAnswer(current, clue);
+    if (winner.answer === current.answer) continue;
+    seen.delete(current.answer);
+    seen.add(winner.answer);
+    into[conflictIndex] = winner;
   }
 }
 
@@ -238,9 +249,7 @@ export async function generateClueBank(
         abortSignal: controller.signal,
       });
 
-      const buffer = [result.text, result.reasoningText]
-        .filter(Boolean)
-        .join("\n");
+      const buffer = result.text ?? "";
 
       const collected: ClueCandidate[] = [];
       const seen = new Set<string>();

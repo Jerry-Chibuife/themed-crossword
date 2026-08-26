@@ -62,7 +62,7 @@ export function GeneratingWait({
         </p>
         <p className="mt-3 text-[var(--ink-muted)]">{detail}</p>
         {error ? (
-          <div className="mt-8 w-full rounded-md border border-[var(--danger)]/30 bg-red-50 px-4 py-3 text-left">
+          <div className="mt-8 flex w-full flex-col items-start rounded-md border border-[var(--danger)]/30 bg-red-50 px-4 py-3 text-left">
             <p className="text-sm text-[var(--danger)]">{error}</p>
             {onRetry ? (
               <button

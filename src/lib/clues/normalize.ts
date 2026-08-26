@@ -57,7 +57,7 @@ export function answersConflict(a: string, b: string): boolean {
   return false;
 }
 
-function preferAnswer(a: ClueCandidate, b: ClueCandidate): ClueCandidate {
+export function preferAnswer(a: ClueCandidate, b: ClueCandidate): ClueCandidate {
   if (a.answer.length !== b.answer.length) {
     return a.answer.length >= b.answer.length ? a : b;
   }

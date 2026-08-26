@@ -104,6 +104,8 @@ export function TopicSparks({
       }, 200);
     } catch {
       setShowingDefaults(true);
+      setSparks(pickFallbackSparks());
+      setVisible(true);
       setPhase("ready");
     }
   }
