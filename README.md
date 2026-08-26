@@ -5,7 +5,7 @@ Generate and play crossword puzzles themed to any topic — books, films, indust
 ## Stack
 
 - Next.js (App Router) + TypeScript + Tailwind
-- Vercel AI SDK → NVIDIA NIM (`minimaxai/minimax-m3` by default)
+- Vercel AI SDK → NVIDIA NIM (`nvidia/nemotron-3-nano-30b-a3b` by default)
 - In-repo crossword packer (backtracking)
 - `localStorage` resume (no accounts)
 
@@ -23,8 +23,10 @@ Without `NVIDIA_API_KEY`, `/api/generate` falls back to a Stormlight-themed fixt
 Optional:
 
 ```bash
-# Optional override (default is minimaxai/minimax-m3)
-NVIDIA_MODEL=deepseek-ai/deepseek-v4-flash
+# Optional override (default is nvidia/nemotron-3-nano-30b-a3b)
+# NVIDIA_MODEL is inlined at Next.js build time — change it, then redeploy.
+# deepseek-ai/deepseek-v4-flash is retired (HTTP 410 Gone) and will fail generation.
+NVIDIA_MODEL=nvidia/nemotron-3-nano-30b-a3b
 ```
 
 ## Repo
@@ -40,7 +42,7 @@ Vercel is linked to this GitHub repo: pushes to `main` deploy production; other 
 Add env vars in the Vercel project settings (Production + Preview):
 
 - `NVIDIA_API_KEY` — required for live LLM clue generation
-- `NVIDIA_MODEL` — optional (`minimaxai/minimax-m3` default; e.g. `deepseek-ai/deepseek-v4-flash`)
+- `NVIDIA_MODEL` — optional (`nvidia/nemotron-3-nano-30b-a3b` default). Leave unset unless you need a different NIM id. A retired id such as `deepseek-ai/deepseek-v4-flash` returns HTTP 410 and blocks clue generation even if the code default has moved on. Changing this on Vercel requires a **redeploy**.
 
 Until `NVIDIA_API_KEY` is set, the deployed app uses the fixture clue bank.
 
@@ -53,7 +55,7 @@ Until `NVIDIA_API_KEY` is set, the deployed app uses the fixture clue bank.
 ## Flow
 
 1. Enter a topic (+ optional notes)
-2. `POST /api/clues` — MiniMax streams a clue batch (partial OK on timeout)
-3. If under 15 unique clues, the UI calls `/api/clues` again (up to 2 top-ups), excluding answers already collected — each call gets its own time budget
+2. `POST /api/clues` — NVIDIA NIM returns a clue batch
+3. If under 24 unique clues, the UI may call `/api/clues` once more (one top-up), excluding answers already collected
 4. `POST /api/pack` — packer places interlocking answers on a grid
 5. Solve in the browser (check / reveal / resume)

@@ -3,8 +3,11 @@ import {
   ClueGenerateError,
   classifyLlmError,
   httpStatusForClueCode,
+  logClueError,
   messageForClueCode,
+  nvidiaStatusFromError,
 } from "@/lib/ai/errors";
+import { getNvidiaModelId } from "@/lib/ai/nvidia";
 import { topicBodySchema } from "@/lib/api/schemas";
 import { generateClueBank } from "@/lib/clues/generate";
 import { normalizeClues } from "@/lib/clues/normalize";
@@ -73,7 +76,7 @@ export async function POST(request: Request) {
       clues,
       meta: {
         usedFixture: false,
-        model: process.env.NVIDIA_MODEL?.trim() || "minimaxai/minimax-m3",
+        model: getNvidiaModelId(),
         clueCount: clues.length,
         timedOut,
         partial: timedOut || clues.length < count,
@@ -84,12 +87,25 @@ export async function POST(request: Request) {
       error instanceof ClueGenerateError
         ? error.code
         : classifyLlmError(error);
+    const nvidiaStatus =
+      error instanceof ClueGenerateError
+        ? error.nvidiaStatus
+        : nvidiaStatusFromError(error);
     const message =
       error instanceof ClueGenerateError
         ? error.message
-        : messageForClueCode(code);
+        : messageForClueCode(code, getNvidiaModelId());
+    if (!(error instanceof ClueGenerateError)) {
+      logClueError("POST /api/clues", error, code);
+    }
     return NextResponse.json(
-      { error: message, stage: "clues", code },
+      {
+        error: message,
+        stage: "clues",
+        code,
+        model: getNvidiaModelId(),
+        ...(nvidiaStatus != null ? { nvidiaStatus } : {}),
+      },
       { status: httpStatusForClueCode(code) },
     );
   }

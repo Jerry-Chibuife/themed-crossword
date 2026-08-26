@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getNvidiaModelId } from "@/lib/ai/nvidia";
 import { pickFallbackSparks } from "@/lib/topics/fallback";
 import { generateTopicSparks } from "@/lib/topics/generate";
 import {
@@ -32,7 +33,7 @@ function aiResponse(sparks: ReturnType<typeof pickFallbackSparks>, cached: boole
     meta: {
       usedFixture: false,
       cached,
-      model: process.env.NVIDIA_MODEL?.trim() || "minimaxai/minimax-m3",
+      model: getNvidiaModelId(),
     },
   });
 }

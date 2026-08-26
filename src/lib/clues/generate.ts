@@ -2,7 +2,9 @@ import { generateText } from "ai";
 import {
   ClueGenerateError,
   classifyLlmError,
+  logClueError,
   messageForClueCode,
+  nvidiaStatusFromError,
 } from "@/lib/ai/errors";
 import { getNvidiaLanguageModel } from "@/lib/ai/nvidia";
 import { MAX_ANSWER_LENGTH, MIN_ANSWER_LENGTH } from "@/lib/clues/limits";
@@ -253,7 +255,12 @@ export async function generateClueBank(
   } catch (error) {
     if (error instanceof ClueGenerateError) throw error;
     const code = classifyLlmError(error);
-    throw new ClueGenerateError(code, messageForClueCode(code));
+    logClueError("generateClueBank", error, code);
+    throw new ClueGenerateError(
+      code,
+      messageForClueCode(code),
+      nvidiaStatusFromError(error),
+    );
   } finally {
     clearTimeout(timeout);
   }
