@@ -32,10 +32,8 @@ describe("classifyLlmError", () => {
     expect(nvidiaStatusFromError(error)).toBe(404);
   });
 
-  it("classifies NVIDIA 400 as model_unavailable", () => {
-    const error = apiError(400, "Bad request");
-    expect(classifyLlmError(error)).toBe("model_unavailable");
-    expect(nvidiaStatusFromError(error)).toBe(400);
+  it("does not treat a generic 400 as model_unavailable", () => {
+    expect(classifyLlmError(apiError(400, "Bad request"))).toBe("failed");
   });
 
   it("walks wrapped causes for 410", () => {

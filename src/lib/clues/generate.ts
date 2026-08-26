@@ -233,7 +233,8 @@ export async function generateClueBank(
       model: getNvidiaLanguageModel(),
       prompt: buildPrompt(topic, notes, count, excludeList),
       temperature: 0.4,
-      maxOutputTokens: Math.max(3200, 80 * count),
+      // Reasoning models spend completion tokens on thinking before JSON.
+      maxOutputTokens: Math.max(4800, 120 * count),
       abortSignal: controller.signal,
     });
 

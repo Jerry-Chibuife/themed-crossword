@@ -66,7 +66,7 @@ export async function generateTopicSparks(): Promise<TopicSpark[]> {
       model: getNvidiaLanguageModel(),
       prompt: buildPrompt(),
       temperature: 0.9,
-      maxOutputTokens: 650,
+      maxOutputTokens: 1400,
       abortSignal: controller.signal,
     });
 

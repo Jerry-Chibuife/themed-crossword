@@ -53,9 +53,7 @@ export function isAbortError(error: unknown): boolean {
 export function classifyLlmError(error: unknown): ClueErrorCode {
   const status = statusFromError(error);
   if (status === 429) return "rate_limited";
-  if (status === 400 || status === 404 || status === 410) {
-    return "model_unavailable";
-  }
+  if (status === 404 || status === 410) return "model_unavailable";
   if (
     error instanceof Error &&
     /429|too many requests/i.test(error.message)

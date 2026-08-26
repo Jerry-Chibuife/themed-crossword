@@ -42,7 +42,7 @@ Vercel is linked to this GitHub repo: pushes to `main` deploy production; other 
 Add env vars in the Vercel project settings (Production + Preview):
 
 - `NVIDIA_API_KEY` — required for live LLM clue generation
-- `NVIDIA_MODEL` — optional (`nvidia/nemotron-3-nano-30b-a3b` default). Leave unset unless you need a different NIM id. A retired id such as `deepseek-ai/deepseek-v4-flash` returns HTTP 410 and blocks clue generation even if the code default has moved on. Changing this on Vercel requires a **redeploy**.
+- `NVIDIA_MODEL` — optional (`nvidia/nemotron-3-nano-30b-a3b` default). Leave unset unless you need a different NIM id. `openai/gpt-oss-120b` is a higher-quality override (reasoning-first; more tokens and latency). Do not use `openai/gpt-oss-20b` — it often spends the whole budget on thinking and returns empty `content`. A retired id such as `deepseek-ai/deepseek-v4-flash` returns HTTP 410 and blocks clue generation even if the code default has moved on. Changing this on Vercel requires a **redeploy**.
 
 Until `NVIDIA_API_KEY` is set, the deployed app uses the fixture clue bank.
 
