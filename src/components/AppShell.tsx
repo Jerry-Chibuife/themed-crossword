@@ -33,6 +33,16 @@ function mergeUnique(
   return normalizeClues([...existing, ...incoming]);
 }
 
+class CluesFetchError extends Error {
+  readonly code: string | undefined;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "CluesFetchError";
+    this.code = code;
+  }
+}
+
 async function fetchClueBatch(input: {
   topic: string;
   notes: string;
@@ -51,7 +61,8 @@ async function fetchClueBatch(input: {
       "error" in data
         ? data.error
         : "Something went wrong gathering clues.";
-    throw new Error(message);
+    const code = "code" in data ? data.code : undefined;
+    throw new CluesFetchError(message, code);
   }
 
   return data.clues;
@@ -90,12 +101,11 @@ export function AppShell() {
     try {
       let clues: ClueCandidate[] = [];
 
-      // First pass + up to MAX_CLUE_TOPUPS more rounds (each gets its own time budget).
+      // First pass, plus at most one top-up if we are short. Never top up after 429.
       for (let round = 0; round <= MAX_CLUE_TOPUPS; round++) {
         if (clues.length >= MIN_PUZZLE_WORDS) break;
 
         const needed = MIN_PUZZLE_WORDS - clues.length;
-        // First pass aims high so one round often clears 24; top-ups fill the gap.
         const count =
           round === 0
             ? 30
@@ -121,7 +131,6 @@ export function AppShell() {
         const before = clues.length;
         clues = mergeUnique(clues, batch);
 
-        // Top-up returned nothing new — stop looping.
         if (clues.length === before && round > 0) break;
       }
 

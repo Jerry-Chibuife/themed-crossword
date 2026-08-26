@@ -10,9 +10,7 @@ import { answersConflict, normalizeClues, preferAnswer } from "@/lib/clues/norma
 import { clueCandidateSchema } from "@/lib/clues/schema";
 import type { ClueCandidate } from "@/lib/crossword/types";
 
-const LLM_TIMEOUT_MS = 22_000;
-const MAX_ATTEMPTS = 2;
-const RETRY_BASE_MS = 1_500;
+const LLM_TIMEOUT_MS = 45_000;
 
 export type GenerateClueOptions = {
   /** Answers the model must not reuse. */
@@ -204,18 +202,13 @@ export function mergeClues(
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export type GenerateClueResult = {
   clues: ClueCandidate[];
   timedOut: boolean;
 };
 
 /**
- * Generate clues from NVIDIA. MiniMax on NIM often yields empty `textStream`
- * while `generateText` (used by Topic Sparks) returns a full payload.
+ * One NVIDIA call per request. Do not retry 429s — that burns the same quota.
  */
 export async function generateClueBank(
   topic: string,
@@ -230,61 +223,38 @@ export async function generateClueBank(
   const count = options.count ?? 30;
   const softStop = options.softStop ?? count;
 
-  let lastError: unknown = null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    if (attempt > 0) {
-      await sleep(RETRY_BASE_MS * 2 ** (attempt - 1));
+  try {
+    const result = await generateText({
+      model: getNvidiaLanguageModel(),
+      prompt: buildPrompt(topic, notes, count, excludeList),
+      temperature: 0.4,
+      maxOutputTokens: Math.max(3200, 80 * count),
+      abortSignal: controller.signal,
+    });
+
+    const collected: ClueCandidate[] = [];
+    const seen = new Set<string>();
+    mergeClues(
+      collected,
+      seen,
+      extractObjectsFromText(result.text ?? ""),
+      exclude,
+    );
+
+    const clues = normalizeClues(collected).slice(0, Math.max(softStop, count));
+    if (clues.length > 0) {
+      return { clues, timedOut: false };
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
-
-    try {
-      const result = await generateText({
-        model: getNvidiaLanguageModel(),
-        prompt: buildPrompt(topic, notes, count, excludeList),
-        temperature: 0.4,
-        maxOutputTokens: Math.max(3200, 80 * count),
-        abortSignal: controller.signal,
-      });
-
-      const buffer = result.text ?? "";
-
-      const collected: ClueCandidate[] = [];
-      const seen = new Set<string>();
-      mergeClues(
-        collected,
-        seen,
-        extractObjectsFromText(buffer),
-        exclude,
-      );
-
-      const clues = normalizeClues(collected).slice(0, Math.max(softStop, count));
-      if (clues.length > 0) {
-        return { clues, timedOut: false };
-      }
-
-      throw new ClueGenerateError("empty", messageForClueCode("empty"));
-    } catch (error) {
-      if (error instanceof ClueGenerateError) {
-        throw error;
-      }
-
-      const code = classifyLlmError(error);
-      if (code === "timeout") {
-        throw new ClueGenerateError("timeout", messageForClueCode("timeout"));
-      }
-      if (code === "rate_limited" && attempt < MAX_ATTEMPTS - 1) {
-        lastError = error;
-        continue;
-      }
-      throw new ClueGenerateError(code, messageForClueCode(code));
-    } finally {
-      clearTimeout(timeout);
-    }
+    throw new ClueGenerateError("empty", messageForClueCode("empty"));
+  } catch (error) {
+    if (error instanceof ClueGenerateError) throw error;
+    const code = classifyLlmError(error);
+    throw new ClueGenerateError(code, messageForClueCode(code));
+  } finally {
+    clearTimeout(timeout);
   }
-
-  if (lastError instanceof ClueGenerateError) throw lastError;
-  throw new ClueGenerateError("empty", messageForClueCode("empty"));
 }

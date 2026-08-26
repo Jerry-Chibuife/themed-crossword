@@ -3,7 +3,7 @@ import { clueCandidateSchema } from "@/lib/clues/schema";
 
 export const MIN_PUZZLE_WORDS = 24;
 /** Max extra /api/clues rounds after the first (client-driven). */
-export const MAX_CLUE_TOPUPS = 3;
+export const MAX_CLUE_TOPUPS = 1;
 /** Fixed grid size until difficulty settings land. */
 export const PUZZLE_GRID_SIZE = 19;
 
