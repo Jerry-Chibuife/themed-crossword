@@ -1,4 +1,10 @@
 import { NextResponse } from "next/server";
+import {
+  ClueGenerateError,
+  classifyLlmError,
+  httpStatusForClueCode,
+  messageForClueCode,
+} from "@/lib/ai/errors";
 import { topicBodySchema } from "@/lib/api/schemas";
 import { generateClueBank } from "@/lib/clues/generate";
 import { normalizeClues } from "@/lib/clues/normalize";
@@ -14,7 +20,7 @@ export async function POST(request: Request) {
     body = topicBodySchema.parse(await request.json());
   } catch {
     return NextResponse.json(
-      { error: "Invalid request body", stage: "clues" },
+      { error: "Invalid request body", stage: "clues", code: "failed" },
       { status: 400 },
     );
   }
@@ -51,14 +57,14 @@ export async function POST(request: Request) {
     });
 
     if (clues.length === 0) {
+      const code = timedOut ? "timeout" : "empty";
       return NextResponse.json(
         {
-          error: timedOut
-            ? "Clue generation timed out before any clues arrived. Try again."
-            : "No valid clues generated. Try again.",
+          error: messageForClueCode(code),
           stage: "clues",
+          code,
         },
-        { status: timedOut ? 504 : 500 },
+        { status: httpStatusForClueCode(code) },
       );
     }
 
@@ -74,8 +80,17 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    const code =
+      error instanceof ClueGenerateError
+        ? error.code
+        : classifyLlmError(error);
     const message =
-      error instanceof Error ? error.message : "Failed to generate clues";
-    return NextResponse.json({ error: message, stage: "clues" }, { status: 500 });
+      error instanceof ClueGenerateError
+        ? error.message
+        : messageForClueCode(code);
+    return NextResponse.json(
+      { error: message, stage: "clues", code },
+      { status: httpStatusForClueCode(code) },
+    );
   }
 }

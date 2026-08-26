@@ -20,7 +20,7 @@ type CluesResponse =
       clues: ClueCandidate[];
       meta?: { usedFixture?: boolean; clueCount?: number; partial?: boolean };
     }
-  | { error: string; stage?: string };
+  | { error: string; stage?: string; code?: string };
 
 type PackResponse =
   | { puzzle: Puzzle; meta?: { placed?: number } }
@@ -65,6 +65,10 @@ export function AppShell() {
   const [status, setStatus] = useState("Gathering clues…");
   const [detail, setDetail] = useState("Asking the model for themed answers.");
   const [hydrated, setHydrated] = useState(false);
+  const [pendingGenerate, setPendingGenerate] = useState<{
+    topic: string;
+    notes: string;
+  } | null>(null);
 
   useEffect(() => {
     const session = loadSession();
@@ -78,6 +82,7 @@ export function AppShell() {
 
   async function handleGenerate(values: { topic: string; notes: string }) {
     setError(null);
+    setPendingGenerate(values);
     setPhase("generating");
     setStatus("Gathering clues…");
     setDetail("Asking the model for themed answers.");
@@ -150,10 +155,13 @@ export function AppShell() {
 
       setPuzzle(packData.puzzle);
       setUserGrid(undefined);
+      setPendingGenerate(null);
       setPhase("play");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
-      setPhase("create");
+      setStatus("Couldn’t generate a puzzle");
+      setDetail("Stay here and retry — your topic is still selected.");
+      setPhase("generating");
     }
   }
 
@@ -184,7 +192,22 @@ export function AppShell() {
   }
 
   if (phase === "generating") {
-    return <GeneratingWait status={status} detail={detail} />;
+    return (
+      <GeneratingWait
+        status={status}
+        detail={detail}
+        error={error}
+        onRetry={
+          pendingGenerate
+            ? () => void handleGenerate(pendingGenerate)
+            : undefined
+        }
+        onCancel={() => {
+          setError(null);
+          setPhase("create");
+        }}
+      />
+    );
   }
 
   return (
