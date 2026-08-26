@@ -1,8 +1,10 @@
 import { APICallError } from "ai";
 import { getNvidiaModelId } from "@/lib/ai/nvidia";
+import { retryAfterSecondsFromHeader } from "@/lib/api/retry-after";
 
 export type ClueErrorCode =
   | "rate_limited"
+  | "overloaded"
   | "timeout"
   | "empty"
   | "failed"
@@ -14,16 +16,19 @@ const BEARER_RE = /Bearer\s+\S+/gi;
 export class ClueGenerateError extends Error {
   readonly code: ClueErrorCode;
   readonly nvidiaStatus: number | undefined;
+  readonly retryAfterSeconds: number | undefined;
 
   constructor(
     code: ClueErrorCode,
     message: string,
     nvidiaStatus?: number,
+    retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "ClueGenerateError";
     this.code = code;
     this.nvidiaStatus = nvidiaStatus;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -41,6 +46,25 @@ export function nvidiaStatusFromError(error: unknown): number | undefined {
   return statusFromError(error);
 }
 
+function headersFromError(error: unknown): Record<string, string> | undefined {
+  if (APICallError.isInstance(error) && error.responseHeaders) {
+    return error.responseHeaders;
+  }
+  if (error instanceof Error && error.cause) {
+    return headersFromError(error.cause);
+  }
+  return undefined;
+}
+
+export function retryAfterSecondsFromError(error: unknown): number {
+  const headers = headersFromError(error);
+  const raw =
+    headers?.["retry-after"] ??
+    headers?.["Retry-After"] ??
+    headers?.["Retry-after"];
+  return retryAfterSecondsFromHeader(raw);
+}
+
 export function isAbortError(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -53,12 +77,19 @@ export function isAbortError(error: unknown): boolean {
 export function classifyLlmError(error: unknown): ClueErrorCode {
   const status = statusFromError(error);
   if (status === 429) return "rate_limited";
+  if (status === 503) return "overloaded";
   if (status === 404 || status === 410) return "model_unavailable";
   if (
     error instanceof Error &&
     /429|too many requests/i.test(error.message)
   ) {
     return "rate_limited";
+  }
+  if (
+    error instanceof Error &&
+    /503|temporarily overloaded|service unavailable/i.test(error.message)
+  ) {
+    return "overloaded";
   }
   if (
     error instanceof Error &&
@@ -75,6 +106,8 @@ export function httpStatusForClueCode(code: ClueErrorCode): number {
   switch (code) {
     case "rate_limited":
       return 429;
+    case "overloaded":
+      return 503;
     case "timeout":
       return 504;
     case "model_unavailable":
@@ -95,7 +128,9 @@ export function messageForClueCode(
 ): string {
   switch (code) {
     case "rate_limited":
-      return "NVIDIA rate limit hit. Wait a few seconds and try again.";
+      return "NVIDIA rate limit hit. Waiting, then continuing.";
+    case "overloaded":
+      return "NVIDIA is busy. Waiting, then continuing.";
     case "timeout":
       return "Clue generation timed out before any clues arrived. Try again.";
     case "empty":

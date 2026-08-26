@@ -6,9 +6,14 @@ import {
   logClueError,
   messageForClueCode,
   nvidiaStatusFromError,
+  retryAfterSecondsFromError,
 } from "@/lib/ai/errors";
 import { getNvidiaModelId } from "@/lib/ai/nvidia";
-import { topicBodySchema } from "@/lib/api/schemas";
+import {
+  CLUE_BATCH_SIZE,
+  isWaitAndRetryCode,
+  topicBodySchema,
+} from "@/lib/api/schemas";
 import { generateClueBank } from "@/lib/clues/generate";
 import { normalizeClues } from "@/lib/clues/normalize";
 import { STORMIGHT_FIXTURE_CLEAN } from "@/lib/crossword/fixtures";
@@ -32,7 +37,7 @@ export async function POST(request: Request) {
   const exclude = normalizeClues(
     body.exclude.map((answer) => ({ answer, clue: answer })),
   ).map((c) => c.answer);
-  const count = body.count ?? (exclude.length > 0 ? 12 : 30);
+  const count = body.count ?? CLUE_BATCH_SIZE;
 
   try {
     if (!canUseNvidia) {
@@ -95,6 +100,12 @@ export async function POST(request: Request) {
       error instanceof ClueGenerateError
         ? error.message
         : messageForClueCode(code, getNvidiaModelId());
+    const retryAfterSeconds =
+      error instanceof ClueGenerateError
+        ? error.retryAfterSeconds
+        : isWaitAndRetryCode(code)
+          ? retryAfterSecondsFromError(error)
+          : undefined;
     if (!(error instanceof ClueGenerateError)) {
       logClueError("POST /api/clues", error, code);
     }
@@ -105,8 +116,15 @@ export async function POST(request: Request) {
         code,
         model: getNvidiaModelId(),
         ...(nvidiaStatus != null ? { nvidiaStatus } : {}),
+        ...(retryAfterSeconds != null ? { retryAfterSeconds } : {}),
       },
-      { status: httpStatusForClueCode(code) },
+      {
+        status: httpStatusForClueCode(code),
+        headers:
+          retryAfterSeconds != null
+            ? { "Retry-After": String(retryAfterSeconds) }
+            : undefined,
+      },
     );
   }
 }

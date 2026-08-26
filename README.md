@@ -5,7 +5,7 @@ Generate and play crossword puzzles themed to any topic — books, films, indust
 ## Stack
 
 - Next.js (App Router) + TypeScript + Tailwind
-- Vercel AI SDK → NVIDIA NIM (`nvidia/nemotron-3-nano-30b-a3b` by default)
+- Vercel AI SDK → NVIDIA NIM (`nvidia/nemotron-3-ultra-550b-a55b` by default)
 - In-repo crossword packer (backtracking)
 - `localStorage` resume (no accounts)
 
@@ -23,10 +23,10 @@ Without `NVIDIA_API_KEY`, `/api/generate` falls back to a Stormlight-themed fixt
 Optional:
 
 ```bash
-# Optional override (default is nvidia/nemotron-3-nano-30b-a3b)
+# Optional override (default is nvidia/nemotron-3-ultra-550b-a55b)
 # NVIDIA_MODEL is inlined at Next.js build time — change it, then redeploy.
 # deepseek-ai/deepseek-v4-flash is retired (HTTP 410 Gone) and will fail generation.
-NVIDIA_MODEL=nvidia/nemotron-3-nano-30b-a3b
+NVIDIA_MODEL=nvidia/nemotron-3-ultra-550b-a55b
 ```
 
 ## Repo
@@ -42,7 +42,7 @@ Vercel is linked to this GitHub repo: pushes to `main` deploy production; other 
 Add env vars in the Vercel project settings (Production + Preview):
 
 - `NVIDIA_API_KEY` — required for live LLM clue generation
-- `NVIDIA_MODEL` — optional (`nvidia/nemotron-3-nano-30b-a3b` default). Leave unset unless you need a different NIM id. `openai/gpt-oss-120b` is a higher-quality override (reasoning-first; more tokens and latency). Do not use `openai/gpt-oss-20b` — it often spends the whole budget on thinking and returns empty `content`. A retired id such as `deepseek-ai/deepseek-v4-flash` returns HTTP 410 and blocks clue generation even if the code default has moved on. Changing this on Vercel requires a **redeploy**.
+- `NVIDIA_MODEL` — optional (`nvidia/nemotron-3-ultra-550b-a55b` default). Leave unset unless you need a different NIM id. A retired id such as `deepseek-ai/deepseek-v4-flash` returns HTTP 410 and blocks clue generation even if the code default has moved on. Changing this on Vercel requires a **redeploy**. If a previous override is still set (DeepSeek, MiniMax, nano), **clear it** so preview uses Ultra.
 
 Until `NVIDIA_API_KEY` is set, the deployed app uses the fixture clue bank.
 
@@ -55,7 +55,7 @@ Until `NVIDIA_API_KEY` is set, the deployed app uses the fixture clue bank.
 ## Flow
 
 1. Enter a topic (+ optional notes)
-2. `POST /api/clues` — NVIDIA NIM returns a clue batch
-3. If under 24 unique clues, the UI may call `/api/clues` once more (one top-up), excluding answers already collected
+2. The UI calls `POST /api/clues` in **batches of 6** until 24 unique clues, excluding answers already collected
+3. On NVIDIA 429/503 the wait screen shows a countdown, then the same generate retries that batch (no SDK auto-retry)
 4. `POST /api/pack` — packer places interlocking answers on a grid
 5. Solve in the browser (check / reveal / resume)

@@ -5,8 +5,10 @@ import {
   logClueError,
   messageForClueCode,
   nvidiaStatusFromError,
+  retryAfterSecondsFromError,
 } from "@/lib/ai/errors";
 import { getNvidiaLanguageModel } from "@/lib/ai/nvidia";
+import { CLUE_BATCH_SIZE } from "@/lib/api/schemas";
 import { MAX_ANSWER_LENGTH, MIN_ANSWER_LENGTH } from "@/lib/clues/limits";
 import { answersConflict, normalizeClues, preferAnswer } from "@/lib/clues/normalize";
 import { clueCandidateSchema } from "@/lib/clues/schema";
@@ -210,7 +212,9 @@ export type GenerateClueResult = {
 };
 
 /**
- * One NVIDIA call per request. Do not retry 429s — that burns the same quota.
+ * One NVIDIA call per request. Do not retry 429/503 here — the client waits
+ * and retries inside the same Generate. Set maxRetries: 0 so the SDK does not
+ * burn quota on automatic retries.
  */
 export async function generateClueBank(
   topic: string,
@@ -222,7 +226,7 @@ export async function generateClueBank(
   ).map((c) => c.answer);
   const exclude = new Set(excludeList);
 
-  const count = options.count ?? 30;
+  const count = options.count ?? CLUE_BATCH_SIZE;
   const softStop = options.softStop ?? count;
 
   const controller = new AbortController();
@@ -233,8 +237,8 @@ export async function generateClueBank(
       model: getNvidiaLanguageModel(),
       prompt: buildPrompt(topic, notes, count, excludeList),
       temperature: 0.4,
-      // Reasoning models spend completion tokens on thinking before JSON.
-      maxOutputTokens: Math.max(4800, 120 * count),
+      maxRetries: 0,
+      maxOutputTokens: Math.max(1800, 250 * count),
       abortSignal: controller.signal,
     });
 
@@ -257,10 +261,15 @@ export async function generateClueBank(
     if (error instanceof ClueGenerateError) throw error;
     const code = classifyLlmError(error);
     logClueError("generateClueBank", error, code);
+    const retryAfter =
+      code === "rate_limited" || code === "overloaded"
+        ? retryAfterSecondsFromError(error)
+        : undefined;
     throw new ClueGenerateError(
       code,
       messageForClueCode(code),
       nvidiaStatusFromError(error),
+      retryAfter,
     );
   } finally {
     clearTimeout(timeout);

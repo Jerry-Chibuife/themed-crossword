@@ -5,8 +5,16 @@ import { CrosswordPlayer } from "@/components/CrosswordPlayer";
 import { GeneratingWait } from "@/components/GeneratingWait";
 import { TopicForm } from "@/components/TopicForm";
 import {
-  MAX_CLUE_TOPUPS,
+  clampRateLimitWaitSeconds,
+  retryAfterSecondsFromHeader,
+} from "@/lib/api/retry-after";
+import {
+  CLUE_BATCH_SIZE,
+  MAX_CLUE_BATCHES,
+  MAX_RATE_LIMIT_WAITS,
   MIN_PUZZLE_WORDS,
+  RATE_LIMIT_WAIT_DEFAULT_SECONDS,
+  isWaitAndRetryCode,
 } from "@/lib/api/schemas";
 import { normalizeClues } from "@/lib/clues/normalize";
 import type { ClueCandidate, Puzzle } from "@/lib/crossword/types";
@@ -20,7 +28,12 @@ type CluesResponse =
       clues: ClueCandidate[];
       meta?: { usedFixture?: boolean; clueCount?: number; partial?: boolean };
     }
-  | { error: string; stage?: string; code?: string };
+  | {
+      error: string;
+      stage?: string;
+      code?: string;
+      retryAfterSeconds?: number;
+    };
 
 type PackResponse =
   | { puzzle: Puzzle; meta?: { placed?: number } }
@@ -33,13 +46,23 @@ function mergeUnique(
   return normalizeClues([...existing, ...incoming]);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 class CluesFetchError extends Error {
   readonly code: string | undefined;
+  readonly retryAfterSeconds: number;
 
-  constructor(message: string, code?: string) {
+  constructor(message: string, code?: string, retryAfterSeconds?: number) {
     super(message);
     this.name = "CluesFetchError";
     this.code = code;
+    this.retryAfterSeconds = clampRateLimitWaitSeconds(
+      retryAfterSeconds ?? RATE_LIMIT_WAIT_DEFAULT_SECONDS,
+    );
   }
 }
 
@@ -62,7 +85,14 @@ async function fetchClueBatch(input: {
         ? data.error
         : "Something went wrong gathering clues.";
     const code = "code" in data ? data.code : undefined;
-    throw new CluesFetchError(message, code);
+    const fromBody =
+      "retryAfterSeconds" in data ? data.retryAfterSeconds : undefined;
+    const wait = retryAfterSecondsFromHeader(
+      fromBody != null
+        ? String(fromBody)
+        : response.headers.get("Retry-After"),
+    );
+    throw new CluesFetchError(message, code, wait);
   }
 
   return data.clues;
@@ -91,6 +121,23 @@ export function AppShell() {
     setHydrated(true);
   }, []);
 
+  async function waitForRateLimit(
+    seconds: number,
+    collected: number,
+    reason: string,
+  ): Promise<void> {
+    for (let left = seconds; left >= 1; left -= 1) {
+      setError(null);
+      setStatus(
+        reason === "overloaded" ? "NVIDIA is busy…" : "NVIDIA rate limit…",
+      );
+      setDetail(
+        `Have ${collected} of ${MIN_PUZZLE_WORDS} clues. Waiting ${left} second${left === 1 ? "" : "s"}, then continuing.`,
+      );
+      await sleep(1000);
+    }
+  }
+
   async function handleGenerate(values: { topic: string; notes: string }) {
     setError(null);
     setPendingGenerate(values);
@@ -100,38 +147,50 @@ export function AppShell() {
 
     try {
       let clues: ClueCandidate[] = [];
+      let batches = 0;
+      let waits = 0;
 
-      // First pass, plus at most one top-up if we are short. Never top up after 429.
-      for (let round = 0; round <= MAX_CLUE_TOPUPS; round++) {
-        if (clues.length >= MIN_PUZZLE_WORDS) break;
-
+      // Frozen: small batches until MIN_PUZZLE_WORDS. Do not collapse into
+      // one large NVIDIA call. 429/503 wait-then-retry here, not in the SDK.
+      while (
+        clues.length < MIN_PUZZLE_WORDS &&
+        batches < MAX_CLUE_BATCHES
+      ) {
         const needed = MIN_PUZZLE_WORDS - clues.length;
-        const count =
-          round === 0
-            ? 30
-            : Math.min(36, Math.max(needed + 4, 10));
+        const count = Math.min(CLUE_BATCH_SIZE, Math.max(needed, 4));
 
-        if (round === 0) {
-          setStatus("Gathering clues…");
-          setDetail("Asking the model for themed answers.");
-        } else {
-          setStatus("Gathering more clues…");
-          setDetail(
-            `Have ${clues.length} of ${MIN_PUZZLE_WORDS} — requesting ${count} more.`,
-          );
+        setStatus("Gathering clues…");
+        setDetail(
+          `Have ${clues.length} of ${MIN_PUZZLE_WORDS} — requesting ${count} more.`,
+        );
+
+        try {
+          const batch = await fetchClueBatch({
+            topic: values.topic,
+            notes: values.notes,
+            exclude: clues.map((c) => c.answer),
+            count,
+          });
+          batches += 1;
+          const before = clues.length;
+          clues = mergeUnique(clues, batch);
+          if (clues.length === before) break;
+        } catch (err) {
+          if (
+            err instanceof CluesFetchError &&
+            isWaitAndRetryCode(err.code) &&
+            waits < MAX_RATE_LIMIT_WAITS
+          ) {
+            waits += 1;
+            await waitForRateLimit(
+              err.retryAfterSeconds,
+              clues.length,
+              err.code,
+            );
+            continue;
+          }
+          throw err;
         }
-
-        const batch = await fetchClueBatch({
-          topic: values.topic,
-          notes: values.notes,
-          exclude: clues.map((c) => c.answer),
-          count,
-        });
-
-        const before = clues.length;
-        clues = mergeUnique(clues, batch);
-
-        if (clues.length === before && round > 0) break;
       }
 
       if (clues.length < MIN_PUZZLE_WORDS) {

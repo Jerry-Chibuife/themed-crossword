@@ -5,6 +5,7 @@ import {
   httpStatusForClueCode,
   messageForClueCode,
   nvidiaStatusFromError,
+  retryAfterSecondsFromError,
   sanitizeLlmErrorDetail,
 } from "@/lib/ai/errors";
 import { DEFAULT_NVIDIA_MODEL, getNvidiaModelId } from "@/lib/ai/nvidia";
@@ -43,6 +44,12 @@ describe("classifyLlmError", () => {
     expect(nvidiaStatusFromError(wrapped)).toBe(410);
   });
 
+  it("classifies NVIDIA 503 as overloaded", () => {
+    const error = apiError(503, "Service temporarily overloaded");
+    expect(classifyLlmError(error)).toBe("overloaded");
+    expect(httpStatusForClueCode("overloaded")).toBe(503);
+  });
+
   it("classifies 429 as rate_limited, not model_unavailable", () => {
     expect(classifyLlmError(apiError(429, "Too Many Requests"))).toBe(
       "rate_limited",
@@ -67,6 +74,20 @@ describe("classifyLlmError", () => {
   it("falls back to failed for other statuses", () => {
     expect(classifyLlmError(apiError(500, "Internal"))).toBe("failed");
     expect(classifyLlmError(new Error("boom"))).toBe("failed");
+  });
+});
+
+describe("retryAfterSecondsFromError", () => {
+  it("reads Retry-After seconds from APICallError headers", () => {
+    const error = new APICallError({
+      message: "Too Many Requests",
+      url: "https://integrate.api.nvidia.com/v1/chat/completions",
+      requestBodyValues: {},
+      statusCode: 429,
+      isRetryable: true,
+      responseHeaders: { "retry-after": "15" },
+    });
+    expect(retryAfterSecondsFromError(error)).toBe(15);
   });
 });
 
@@ -98,10 +119,10 @@ describe("getNvidiaModelId", () => {
     }
   });
 
-  it("defaults to nemotron-3-nano", () => {
+  it("defaults to nemotron-3-ultra", () => {
     delete process.env.NVIDIA_MODEL;
     expect(getNvidiaModelId()).toBe(DEFAULT_NVIDIA_MODEL);
-    expect(DEFAULT_NVIDIA_MODEL).toBe("nvidia/nemotron-3-nano-30b-a3b");
+    expect(DEFAULT_NVIDIA_MODEL).toBe("nvidia/nemotron-3-ultra-550b-a55b");
   });
 
   it("honors NVIDIA_MODEL override", () => {
