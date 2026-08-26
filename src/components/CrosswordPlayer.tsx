@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ClueList } from "@/components/ClueList";
-import { CluesDrawer } from "@/components/CluesDrawer";
+import { CluesSheet } from "@/components/CluesSheet";
 import { CrosswordGrid } from "@/components/CrosswordGrid";
 import {
   clueCells,
@@ -43,6 +43,8 @@ export function CrosswordPlayer({
   const [cluesOpen, setCluesOpen] = useState(false);
   const [checked, setChecked] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cluesButtonRef = useRef<HTMLButtonElement>(null);
+  const wasCluesOpenRef = useRef(false);
 
   const activeClue = useMemo(
     () => getClueAt(puzzle, selected.row, selected.col, direction),
@@ -58,13 +60,39 @@ export function CrosswordPlayer({
     inputRef.current?.focus({ preventScroll: true });
   }
 
+  function blurInput() {
+    inputRef.current?.blur();
+  }
+
   useEffect(() => {
     saveSession({ puzzle, userGrid, updatedAt: Date.now() });
   }, [puzzle, userGrid]);
 
   useEffect(() => {
+    if (cluesOpen) {
+      wasCluesOpenRef.current = true;
+      return;
+    }
+    // Sheet just closed — Clues button regains focus; skip soft-keyboard steal.
+    if (wasCluesOpenRef.current) {
+      wasCluesOpenRef.current = false;
+      return;
+    }
     focusInput();
-  }, [selected, direction]);
+  }, [selected, direction, cluesOpen]);
+
+  function openCluesSheet() {
+    setDrawerTab(direction);
+    blurInput();
+    setCluesOpen(true);
+  }
+
+  function closeCluesSheet() {
+    setCluesOpen(false);
+    window.requestAnimationFrame(() => {
+      cluesButtonRef.current?.focus();
+    });
+  }
 
   function move(delta: 1 | -1) {
     const next = nextOpenCell(
@@ -218,7 +246,7 @@ export function CrosswordPlayer({
             </p>
           ) : null}
         </div>
-        {/* Below lg, clues use a drawer — keep actions under the title. */}
+        {/* Below lg, clues use a bottom sheet — keep actions under the title. */}
         <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
           <button
             type="button"
@@ -240,12 +268,12 @@ export function CrosswordPlayer({
             New puzzle
           </button>
           <button
+            ref={cluesButtonRef}
             type="button"
             className="btn-secondary ml-auto lg:hidden"
-            onClick={() => {
-              setDrawerTab(direction);
-              setCluesOpen(true);
-            }}
+            aria-haspopup="dialog"
+            aria-expanded={cluesOpen}
+            onClick={openCluesSheet}
           >
             Clues
           </button>
@@ -315,12 +343,9 @@ export function CrosswordPlayer({
         </div>
       </div>
 
-      <CluesDrawer
+      <CluesSheet
         open={cluesOpen}
-        onClose={() => {
-          setCluesOpen(false);
-          focusInput();
-        }}
+        onClose={closeCluesSheet}
         puzzle={puzzle}
         userGrid={userGrid}
         across={puzzle.clues.across}

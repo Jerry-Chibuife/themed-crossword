@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { getWordFillStatus } from "@/lib/crossword/helpers";
 import type { ClueEntry, Direction, Puzzle } from "@/lib/crossword/types";
 
-type CluesDrawerProps = {
+type CluesSheetProps = {
   open: boolean;
   onClose: () => void;
   puzzle: Puzzle;
@@ -24,7 +24,16 @@ function clueStatusKey(dir: Direction, num: number): string {
   return `${dir}:${num}`;
 }
 
-export function CluesDrawer({
+function getFocusable(container: HTMLElement): HTMLElement[] {
+  const nodes = container.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  );
+  return [...nodes].filter(
+    (el) => el.tabIndex !== -1 && !el.hasAttribute("disabled"),
+  );
+}
+
+export function CluesSheet({
   open,
   onClose,
   puzzle,
@@ -36,14 +45,52 @@ export function CluesDrawer({
   tab,
   onTabChange,
   onSelect,
-}: CluesDrawerProps) {
+}: CluesSheetProps) {
+  const sheetRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
     if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const focusTimer = window.setTimeout(() => {
+      closeRef.current?.focus();
+    }, 0);
+
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab" || !sheetRef.current) return;
+      const focusable = getFocusable(sheetRef.current);
+      if (focusable.length === 0) return;
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+
+      if (event.shiftKey) {
+        if (active === first || !sheetRef.current.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
+
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
   }, [open, onClose]);
 
   const solvedKeys = useMemo(() => {
@@ -82,13 +129,15 @@ export function CluesDrawer({
         onClick={onClose}
       />
       <aside
-        className={`absolute inset-y-0 right-0 flex w-1/3 min-w-0 flex-col border-l border-[var(--ink)]/10 bg-[var(--paper)] shadow-[-12px_0_40px_-20px_rgba(26,35,50,0.45)] transition-[transform,opacity] ease-out ${
-          open ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"
+        ref={sheetRef}
+        className={`absolute inset-x-0 bottom-0 flex h-[65dvh] max-h-[65dvh] w-full flex-col rounded-t-xl border-t border-[var(--ink)]/10 bg-[var(--paper)] shadow-[0_-12px_40px_-20px_rgba(26,35,50,0.45)] transition-[transform,opacity] ease-out ${
+          open ? "translate-y-0 opacity-100" : "translate-y-full opacity-0"
         }`}
         style={{ transitionDuration: `${TRANSITION_MS}ms` }}
       >
-        <div className="flex items-center justify-end px-2 pt-2">
+        <div className="flex items-center justify-end px-3 pt-3">
           <button
+            ref={closeRef}
             type="button"
             tabIndex={open ? 0 : -1}
             className="rounded-md px-2.5 py-1.5 text-lg leading-none text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)]"
@@ -99,14 +148,14 @@ export function CluesDrawer({
           </button>
         </div>
 
-        <div className="mt-14 flex gap-1.5 px-2 pb-3">
+        <div className="mt-5 flex gap-2 px-3 pb-3">
           {(["across", "down"] as const).map((dir) => (
             <button
               key={dir}
               type="button"
               tabIndex={open ? 0 : -1}
               onClick={() => onTabChange(dir)}
-              className={`flex-1 rounded-md px-2 py-2 text-sm font-medium capitalize ${
+              className={`flex-1 rounded-md px-3 py-2.5 text-sm font-medium capitalize ${
                 tab === dir
                   ? "bg-[var(--ink)] text-[var(--paper)]"
                   : "bg-black/5 text-[var(--ink-muted)]"
@@ -117,7 +166,7 @@ export function CluesDrawer({
           ))}
         </div>
 
-        <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-4">
+        <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-3 pb-6">
           {clues.map((clue) => {
             const solved = solvedKeys.has(clueStatusKey(tab, clue.num));
             const active = activeDir === tab && activeNum === clue.num;
@@ -128,9 +177,9 @@ export function CluesDrawer({
                   tabIndex={open ? 0 : -1}
                   onClick={() => {
                     onSelect(clue, tab);
-                    onClose();
+                    // Keep sheet open for scanning multiple clues.
                   }}
-                  className={`flex w-full items-start gap-1.5 rounded-md px-1.5 py-1.5 text-left text-sm leading-snug transition-colors ${
+                  className={`flex w-full items-start gap-2 rounded-md px-2 py-2 text-left text-sm leading-snug transition-colors ${
                     solved
                       ? "text-[var(--ink-muted)]/55"
                       : active
@@ -149,7 +198,7 @@ export function CluesDrawer({
                     {clue.clue}
                     {solved ? (
                       <span
-                        className="ml-1 inline-block align-middle text-[var(--success)]"
+                        className="ml-1.5 inline-block align-middle text-[var(--success)]"
                         aria-label="Solved"
                       >
                         ✓

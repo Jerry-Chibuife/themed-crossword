@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { saveSparksCache } from "@/lib/topics/cache";
+import {
+  isSparksCacheFresh,
+  loadSparksCache,
+  saveSparksCache,
+} from "@/lib/topics/cache";
 import { pickFallbackSparks } from "@/lib/topics/fallback";
 import {
   CATEGORY_LABELS,
@@ -17,10 +21,16 @@ type TopicSparksProps = {
 
 type TopicsResponse = {
   sparks: TopicSpark[];
-  meta?: { usedFixture?: boolean };
+  meta?: { usedFixture?: boolean; cached?: boolean };
 };
 
 type LoadPhase = "loading" | "ready" | "reloading";
+
+function readFreshCache(): TopicSpark[] | null {
+  if (typeof window === "undefined") return null;
+  if (!isSparksCacheFresh()) return null;
+  return loadSparksCache();
+}
 
 async function fetchSparks(): Promise<TopicSpark[]> {
   const response = await fetch("/api/topics", { method: "POST" });
@@ -41,18 +51,23 @@ export function TopicSparks({
   onSelect,
   disabled = false,
 }: TopicSparksProps) {
-  const [sparks, setSparks] = useState<TopicSpark[]>([]);
-  const [phase, setPhase] = useState<LoadPhase>("loading");
+  const [sparks, setSparks] = useState<TopicSpark[]>(() => readFreshCache() ?? []);
+  const [phase, setPhase] = useState<LoadPhase>(() =>
+    readFreshCache() ? "ready" : "loading",
+  );
   const [visible, setVisible] = useState(true);
+  const [showingDefaults, setShowingDefaults] = useState(false);
 
   useEffect(() => {
+    if (readFreshCache()) return;
+
     let cancelled = false;
 
-    setPhase("loading");
     fetchSparks()
       .then((next) => {
         if (cancelled) return;
         saveSparksCache(next);
+        setShowingDefaults(false);
         setVisible(false);
         window.setTimeout(() => {
           if (cancelled) return;
@@ -63,6 +78,7 @@ export function TopicSparks({
       })
       .catch(() => {
         if (cancelled) return;
+        setShowingDefaults(true);
         setSparks(pickFallbackSparks());
         setVisible(true);
         setPhase("ready");
@@ -79,6 +95,7 @@ export function TopicSparks({
     try {
       const next = await fetchSparks();
       saveSparksCache(next);
+      setShowingDefaults(false);
       setVisible(false);
       window.setTimeout(() => {
         setSparks(next);
@@ -86,7 +103,7 @@ export function TopicSparks({
         setPhase("ready");
       }, 200);
     } catch {
-      // Keep the current slate (AI or defaults).
+      setShowingDefaults(true);
       setPhase("ready");
     }
   }
@@ -119,11 +136,18 @@ export function TopicSparks({
         </button>
       </div>
 
+      {showingDefaults && phase === "ready" ? (
+        <p className="mt-2 text-sm text-[var(--ink-muted)]">
+          Showing defaults — tap Reload to try again.
+        </p>
+      ) : null}
+
       {sparks.length > 0 ? (
         <ul
           className={`tip-fade mt-4 grid grid-cols-2 gap-2 ${
             visible ? "tip-fade-in" : "tip-fade-out"
           }`}
+          aria-busy={phase === "loading" || phase === "reloading"}
         >
           {sparks.map((spark) => {
             const selected = selectedLabel === spark.label;
@@ -160,7 +184,8 @@ export function TopicSparks({
       ) : (
         <div
           className="mt-4 grid grid-cols-2 gap-2"
-          aria-hidden={phase !== "loading"}
+          aria-busy={phase === "loading"}
+          aria-label="Loading topic sparks"
         >
           {Array.from({ length: TOPIC_SPARK_COUNT }, (_, index) => (
             <div

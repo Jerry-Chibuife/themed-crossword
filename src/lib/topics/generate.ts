@@ -6,7 +6,7 @@ import {
   type TopicSpark,
 } from "@/lib/topics/types";
 
-const TOPIC_TIMEOUT_MS = 16_000;
+const TOPIC_TIMEOUT_MS = 22_000;
 
 function buildPrompt(): string {
   const cats = TOPIC_CATEGORIES.join(", ");

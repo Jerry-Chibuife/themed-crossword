@@ -39,6 +39,8 @@ function levenshtein(a: string, b: string): number {
 
 /**
  * True when two answers are the same work under truncation or near-miss spelling.
+ * Prefix collisions require a stem of at least 5 letters so short unrelated
+ * prefixes (e.g. CAT / CATALYST, STAR / START) do not wipe distinct entries.
  */
 export function answersConflict(a: string, b: string): boolean {
   if (a === b) return true;
@@ -46,7 +48,9 @@ export function answersConflict(a: string, b: string): boolean {
   const shorter = a.length <= b.length ? a : b;
   const longer = a.length <= b.length ? b : a;
 
-  if (longer.startsWith(shorter)) return true;
+  if (shorter.length >= 5 && longer.startsWith(shorter)) {
+    return true;
+  }
 
   if (shorter.length >= 5 && levenshtein(a, b) <= 2) return true;
 

@@ -3,10 +3,16 @@ import { MAX_ANSWER_LENGTH } from "@/lib/clues/limits";
 import { answersConflict, normalizeClues } from "@/lib/clues/normalize";
 
 describe("answersConflict", () => {
-  it("detects exact matches and prefixes", () => {
+  it("detects exact matches and substantial prefixes", () => {
     expect(answersConflict("DESPACITO", "DESPACITO")).toBe(true);
     expect(answersConflict("DESPA", "DESPACITO")).toBe(true);
     expect(answersConflict("OLDTOWN", "OLDTOWNROAD")).toBe(true);
+  });
+
+  it("ignores short or weak prefixes that are distinct titles", () => {
+    expect(answersConflict("CAT", "CATALYST")).toBe(false);
+    expect(answersConflict("STAR", "START")).toBe(false);
+    expect(answersConflict("A", "APPLE")).toBe(false);
   });
 
   it("detects near-miss spellings", () => {
@@ -19,6 +25,11 @@ describe("answersConflict", () => {
   it("allows distinct titles", () => {
     expect(answersConflict("SHALLOW", "THUNDER")).toBe(false);
     expect(answersConflict("FLOWERS", "SHALLOW")).toBe(false);
+  });
+
+  it("treats close edit-distance peers as conflicts (intentional)", () => {
+    // HOUSE/HORSE differ by one letter — still a near-miss for crossword banks.
+    expect(answersConflict("HOUSE", "HORSE")).toBe(true);
   });
 });
 
