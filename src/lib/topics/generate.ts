@@ -20,7 +20,7 @@ Categories (exactly one spark per category, in any order): ${cats}
 
 Rules:
 - label: catchy, specific, enticing; 3-40 characters. Not generic ("Movies", "History").
-- Prefer entity-rich themes (names, titles, places, terms) that can fill a 24-word crossword.
+- Prefer entity-rich themes (names, titles, places, terms) that can fill a 15-word crossword.
 - hook: one short tease, max 60 characters, optional grounding for clue generation.
 - Keep it fun and bold. No NSFW, no hate, no harassment of living private individuals.
 - Make the ${count} labels feel distinct from each other.

@@ -14,6 +14,7 @@ import {
   MAX_RATE_LIMIT_WAITS,
   MIN_PUZZLE_WORDS,
   RATE_LIMIT_WAIT_DEFAULT_SECONDS,
+  TARGET_PUZZLE_WORDS,
   isWaitAndRetryCode,
 } from "@/lib/api/schemas";
 import { normalizeClues } from "@/lib/clues/normalize";
@@ -132,7 +133,7 @@ export function AppShell() {
         reason === "overloaded" ? "NVIDIA is busy…" : "NVIDIA rate limit…",
       );
       setDetail(
-        `Have ${collected} of ${MIN_PUZZLE_WORDS} clues. Waiting ${left} second${left === 1 ? "" : "s"}, then continuing.`,
+        `Have ${collected} of ${TARGET_PUZZLE_WORDS} clues. Waiting ${left} second${left === 1 ? "" : "s"}, then continuing.`,
       );
       await sleep(1000);
     }
@@ -150,18 +151,18 @@ export function AppShell() {
       let batches = 0;
       let waits = 0;
 
-      // Frozen: small batches until MIN_PUZZLE_WORDS. Do not collapse into
+      // Small batches until TARGET_PUZZLE_WORDS. Do not collapse into
       // one large NVIDIA call. 429/503 wait-then-retry here, not in the SDK.
       while (
-        clues.length < MIN_PUZZLE_WORDS &&
+        clues.length < TARGET_PUZZLE_WORDS &&
         batches < MAX_CLUE_BATCHES
       ) {
-        const needed = MIN_PUZZLE_WORDS - clues.length;
+        const needed = TARGET_PUZZLE_WORDS - clues.length;
         const count = Math.min(CLUE_BATCH_SIZE, Math.max(needed, 4));
 
         setStatus("Gathering clues…");
         setDetail(
-          `Have ${clues.length} of ${MIN_PUZZLE_WORDS} — requesting ${count} more.`,
+          `Have ${clues.length} of ${TARGET_PUZZLE_WORDS} — requesting ${count} more.`,
         );
 
         try {
