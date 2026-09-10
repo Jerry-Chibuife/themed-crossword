@@ -8,6 +8,7 @@ import {
   clueCells,
   emptyUserGrid,
   getClueAt,
+  isProtectedCrossingCell,
   isPuzzleComplete,
   nextOpenCell,
 } from "@/lib/crossword/helpers";
@@ -150,7 +151,17 @@ export function CrosswordPlayer({
 
     if (event.key === "Backspace" || event.key === "Delete") {
       event.preventDefault();
-      writeLetter("");
+      if (
+        !isProtectedCrossingCell(
+          puzzle,
+          userGrid,
+          selected.row,
+          selected.col,
+          direction,
+        )
+      ) {
+        writeLetter("");
+      }
       move(-1);
       return;
     }

@@ -6,7 +6,7 @@ const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
  * `deepseek-ai/deepseek-v4-flash` is retired (HTTP 410).
  * NVIDIA_MODEL is inlined at Next.js build time — changing Vercel env requires a redeploy.
  */
-export const DEFAULT_NVIDIA_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
+export const DEFAULT_NVIDIA_MODEL = "deepseek-ai/deepseek-v4-pro-0813";
 
 export function getNvidiaModelId(): string {
   return process.env.NVIDIA_MODEL?.trim() || DEFAULT_NVIDIA_MODEL;

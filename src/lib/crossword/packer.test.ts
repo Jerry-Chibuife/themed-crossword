@@ -7,7 +7,7 @@ import { packCrossword } from "./packer";
 import { packFromBank } from "./pack-from-bank";
 
 describe("packCrossword", () => {
-  it("packs at least 24 unique themed words on the fixed grid path", () => {
+  it("packs at least the minimum unique themed words on the fixed grid path", () => {
     const bank = normalizeClues(STORMIGHT_FIXTURE_CLEAN);
     expect(bank.length).toBeGreaterThanOrEqual(MIN_PUZZLE_WORDS);
 
@@ -49,8 +49,20 @@ describe("packCrossword", () => {
 });
 
 describe("packFromBank", () => {
-  it("returns a puzzle with at least 24 unique answers", () => {
+  it("returns a puzzle with at least the minimum unique answers", () => {
     const bank = normalizeClues(STORMIGHT_FIXTURE_CLEAN);
+    const puzzle = packFromBank("Stormlight Archive", bank, "medium");
+
+    expect(puzzle).not.toBeNull();
+    const entries = [...puzzle!.clues.across, ...puzzle!.clues.down];
+    expect(entries.length).toBeGreaterThanOrEqual(MIN_PUZZLE_WORDS);
+    expect(new Set(entries.map((e) => e.answer)).size).toBe(entries.length);
+  });
+
+  it("packs a 12-word bank without requiring 15 candidates", () => {
+    const bank = normalizeClues(STORMIGHT_FIXTURE_CLEAN).slice(0, 12);
+    expect(bank.length).toBe(MIN_PUZZLE_WORDS);
+
     const puzzle = packFromBank("Stormlight Archive", bank, "medium");
 
     expect(puzzle).not.toBeNull();

@@ -2,17 +2,19 @@ import { z } from "zod";
 import { clueCandidateSchema } from "@/lib/clues/schema";
 
 /**
- * FROZEN generate architecture. Do not change these values or the
- * small-batch / wait-then-retry loop unless explicitly requested.
+ * Generate architecture. Do not collapse the small-batch /
+ * wait-then-retry loop unless explicitly requested.
  *
  * One Generate: the client calls POST /api/clues repeatedly for
- * CLUE_BATCH_SIZE new clues, aggregates until MIN_PUZZLE_WORDS, and on
+ * CLUE_BATCH_SIZE new clues, aggregates until TARGET_PUZZLE_WORDS, and on
  * NVIDIA 429/503 tells the user, waits retry-after (or a default), then
  * retries that same batch. The server never auto-retries 429s.
+ * Packing may succeed with as few as MIN_PUZZLE_WORDS placed.
  */
-export const MIN_PUZZLE_WORDS = 24;
+export const TARGET_PUZZLE_WORDS = 15;
+export const MIN_PUZZLE_WORDS = 12;
 export const CLUE_BATCH_SIZE = 6;
-/** Safety cap on successful /api/clues rounds in one Generate (24/6 = 4, plus dups). */
+/** Safety cap on successful /api/clues rounds in one Generate (15/6 = 3, plus dups). */
 export const MAX_CLUE_BATCHES = 8;
 /** Max wait-and-retry cycles for 429/503 inside one Generate. */
 export const MAX_RATE_LIMIT_WAITS = 5;
@@ -51,6 +53,7 @@ export const packBodySchema = z.object({
 });
 
 export function difficultyParams(_difficulty: "easy" | "medium" | "hard") {
-  // Difficulty UI comes later; every pack uses a fixed 19×19 with min 24 words.
+  // Difficulty UI comes later; every pack uses a fixed 19×19.
+  // Generate aims for TARGET_PUZZLE_WORDS; packer may place as few as MIN.
   return { minWords: MIN_PUZZLE_WORDS, size: PUZZLE_GRID_SIZE };
 }

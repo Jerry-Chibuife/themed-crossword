@@ -8,15 +8,18 @@ import {
   MAX_CLUE_BATCHES,
   MIN_PUZZLE_WORDS,
   RATE_LIMIT_WAIT_DEFAULT_SECONDS,
+  TARGET_PUZZLE_WORDS,
   isWaitAndRetryCode,
 } from "@/lib/api/schemas";
 
-describe("frozen generate policy", () => {
-  it("keeps small batches that can fill a 24-word puzzle", () => {
+describe("generate policy", () => {
+  it("keeps small batches that can fill a 15-word puzzle", () => {
     expect(CLUE_BATCH_SIZE).toBe(6);
-    expect(MIN_PUZZLE_WORDS).toBe(24);
+    expect(TARGET_PUZZLE_WORDS).toBe(15);
+    expect(MIN_PUZZLE_WORDS).toBe(12);
+    expect(MIN_PUZZLE_WORDS).toBeLessThanOrEqual(TARGET_PUZZLE_WORDS);
     expect(CLUE_BATCH_SIZE * MAX_CLUE_BATCHES).toBeGreaterThanOrEqual(
-      MIN_PUZZLE_WORDS,
+      TARGET_PUZZLE_WORDS,
     );
   });
 

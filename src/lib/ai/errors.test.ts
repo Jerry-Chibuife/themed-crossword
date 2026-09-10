@@ -119,10 +119,10 @@ describe("getNvidiaModelId", () => {
     }
   });
 
-  it("defaults to nemotron-3-ultra", () => {
+  it("defaults to deepseek-v4-pro", () => {
     delete process.env.NVIDIA_MODEL;
     expect(getNvidiaModelId()).toBe(DEFAULT_NVIDIA_MODEL);
-    expect(DEFAULT_NVIDIA_MODEL).toBe("nvidia/nemotron-3-ultra-550b-a55b");
+    expect(DEFAULT_NVIDIA_MODEL).toBe("deepseek-ai/deepseek-v4-pro-0813");
   });
 
   it("honors NVIDIA_MODEL override", () => {

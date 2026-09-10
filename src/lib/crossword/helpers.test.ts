@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getCellWordStatus, getWordFillStatus } from "./helpers";
+import {
+  getCellWordStatus,
+  getWordFillStatus,
+  isProtectedCrossingCell,
+} from "./helpers";
 import type { Puzzle } from "./types";
 
 const puzzle: Puzzle = {
@@ -59,5 +63,39 @@ describe("word completion colors", () => {
       getWordFillStatus(puzzle, userGrid, puzzle.clues.across[0]!, "across"),
     ).toBe("incomplete");
     expect(getCellWordStatus(puzzle, userGrid, 0, 0)).toBeNull();
+  });
+});
+
+describe("isProtectedCrossingCell", () => {
+  it("protects a letter when the other word is fully filled", () => {
+    const userGrid = [
+      "C", "A", "T", null, null,
+      "O", null, null, null, null,
+      "P", null, null, null, null,
+      null, null, null, null, null,
+      null, null, null, null, null,
+    ];
+    expect(isProtectedCrossingCell(puzzle, userGrid, 0, 0, "across")).toBe(
+      true,
+    );
+    expect(isProtectedCrossingCell(puzzle, userGrid, 0, 0, "down")).toBe(
+      true,
+    );
+    expect(isProtectedCrossingCell(puzzle, userGrid, 0, 1, "across")).toBe(
+      false,
+    );
+  });
+
+  it("does not protect when the other word is still incomplete", () => {
+    const userGrid = [
+      "C", "A", "T", null, null,
+      "O", null, null, null, null,
+      "", null, null, null, null,
+      null, null, null, null, null,
+      null, null, null, null, null,
+    ];
+    expect(isProtectedCrossingCell(puzzle, userGrid, 0, 0, "across")).toBe(
+      false,
+    );
   });
 });
