@@ -6,7 +6,8 @@ import {
   type TopicSpark,
 } from "@/lib/topics/types";
 
-const TOPIC_TIMEOUT_MS = 22_000;
+/** Abort before the route maxDuration (45s) so Reload can still return fixture. */
+export const TOPIC_TIMEOUT_MS = 30_000;
 
 function buildPrompt(): string {
   const cats = TOPIC_CATEGORIES.join(", ");

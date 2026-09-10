@@ -9,7 +9,8 @@ import {
 import { topicSparksResponseSchema } from "@/lib/topics/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+/** Headroom over TOPIC_TIMEOUT_MS (30s) so an abort can still return fixture. */
+export const maxDuration = 45;
 export const preferredRegion = "iad1";
 
 function fixtureResponse(fallbackReason?: string) {
