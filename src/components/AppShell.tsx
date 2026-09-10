@@ -5,9 +5,19 @@ import { CrosswordPlayer } from "@/components/CrosswordPlayer";
 import { GeneratingWait } from "@/components/GeneratingWait";
 import { TopicForm } from "@/components/TopicForm";
 import {
-  MAX_CLUE_TOPUPS,
+  clampRateLimitWaitSeconds,
+  retryAfterSecondsFromHeader,
+} from "@/lib/api/retry-after";
+import {
+  CLUE_BATCH_SIZE,
+  MAX_CLUE_BATCHES,
+  MAX_RATE_LIMIT_WAITS,
   MIN_PUZZLE_WORDS,
+  RATE_LIMIT_WAIT_DEFAULT_SECONDS,
+  TARGET_PUZZLE_WORDS,
+  isWaitAndRetryCode,
 } from "@/lib/api/schemas";
+import { normalizeClues } from "@/lib/clues/normalize";
 import type { ClueCandidate, Puzzle } from "@/lib/crossword/types";
 import { clearSession, loadSession } from "@/lib/storage";
 
@@ -19,7 +29,12 @@ type CluesResponse =
       clues: ClueCandidate[];
       meta?: { usedFixture?: boolean; clueCount?: number; partial?: boolean };
     }
-  | { error: string; stage?: string };
+  | {
+      error: string;
+      stage?: string;
+      code?: string;
+      retryAfterSeconds?: number;
+    };
 
 type PackResponse =
   | { puzzle: Puzzle; meta?: { placed?: number } }
@@ -29,15 +44,27 @@ function mergeUnique(
   existing: ClueCandidate[],
   incoming: ClueCandidate[],
 ): ClueCandidate[] {
-  const seen = new Set(existing.map((c) => c.answer));
-  const out = [...existing];
-  for (const clue of incoming) {
-    const answer = clue.answer.toUpperCase().replace(/[^A-Z]/g, "");
-    if (answer.length < 3 || seen.has(answer)) continue;
-    seen.add(answer);
-    out.push({ ...clue, answer });
+  return normalizeClues([...existing, ...incoming]);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+class CluesFetchError extends Error {
+  readonly code: string | undefined;
+  readonly retryAfterSeconds: number;
+
+  constructor(message: string, code?: string, retryAfterSeconds?: number) {
+    super(message);
+    this.name = "CluesFetchError";
+    this.code = code;
+    this.retryAfterSeconds = clampRateLimitWaitSeconds(
+      retryAfterSeconds ?? RATE_LIMIT_WAIT_DEFAULT_SECONDS,
+    );
   }
-  return out;
 }
 
 async function fetchClueBatch(input: {
@@ -58,7 +85,15 @@ async function fetchClueBatch(input: {
       "error" in data
         ? data.error
         : "Something went wrong gathering clues.";
-    throw new Error(message);
+    const code = "code" in data ? data.code : undefined;
+    const fromBody =
+      "retryAfterSeconds" in data ? data.retryAfterSeconds : undefined;
+    const wait = retryAfterSecondsFromHeader(
+      fromBody != null
+        ? String(fromBody)
+        : response.headers.get("Retry-After"),
+    );
+    throw new CluesFetchError(message, code, wait);
   }
 
   return data.clues;
@@ -72,6 +107,10 @@ export function AppShell() {
   const [status, setStatus] = useState("Gathering clues…");
   const [detail, setDetail] = useState("Asking the model for themed answers.");
   const [hydrated, setHydrated] = useState(false);
+  const [pendingGenerate, setPendingGenerate] = useState<{
+    topic: string;
+    notes: string;
+  } | null>(null);
 
   useEffect(() => {
     const session = loadSession();
@@ -83,48 +122,76 @@ export function AppShell() {
     setHydrated(true);
   }, []);
 
+  async function waitForRateLimit(
+    seconds: number,
+    collected: number,
+    reason: string,
+  ): Promise<void> {
+    for (let left = seconds; left >= 1; left -= 1) {
+      setError(null);
+      setStatus(
+        reason === "overloaded" ? "NVIDIA is busy…" : "NVIDIA rate limit…",
+      );
+      setDetail(
+        `Have ${collected} of ${TARGET_PUZZLE_WORDS} clues. Waiting ${left} second${left === 1 ? "" : "s"}, then continuing.`,
+      );
+      await sleep(1000);
+    }
+  }
+
   async function handleGenerate(values: { topic: string; notes: string }) {
     setError(null);
+    setPendingGenerate(values);
     setPhase("generating");
     setStatus("Gathering clues…");
     setDetail("Asking the model for themed answers.");
 
     try {
       let clues: ClueCandidate[] = [];
+      let batches = 0;
+      let waits = 0;
 
-      // First pass + up to MAX_CLUE_TOPUPS more rounds (each gets its own time budget).
-      for (let round = 0; round <= MAX_CLUE_TOPUPS; round++) {
-        if (clues.length >= MIN_PUZZLE_WORDS) break;
+      // Small batches until TARGET_PUZZLE_WORDS. Do not collapse into
+      // one large NVIDIA call. 429/503 wait-then-retry here, not in the SDK.
+      while (
+        clues.length < TARGET_PUZZLE_WORDS &&
+        batches < MAX_CLUE_BATCHES
+      ) {
+        const needed = TARGET_PUZZLE_WORDS - clues.length;
+        const count = Math.min(CLUE_BATCH_SIZE, Math.max(needed, 4));
 
-        const needed = MIN_PUZZLE_WORDS - clues.length;
-        // First pass aims high so one round often clears 24; top-ups fill the gap.
-        const count =
-          round === 0
-            ? 30
-            : Math.min(36, Math.max(needed + 4, 10));
+        setStatus("Gathering clues…");
+        setDetail(
+          `Have ${clues.length} of ${TARGET_PUZZLE_WORDS} — requesting ${count} more.`,
+        );
 
-        if (round === 0) {
-          setStatus("Gathering clues…");
-          setDetail("Asking the model for themed answers.");
-        } else {
-          setStatus("Gathering more clues…");
-          setDetail(
-            `Have ${clues.length} of ${MIN_PUZZLE_WORDS} — requesting ${count} more.`,
-          );
+        try {
+          const batch = await fetchClueBatch({
+            topic: values.topic,
+            notes: values.notes,
+            exclude: clues.map((c) => c.answer),
+            count,
+          });
+          batches += 1;
+          const before = clues.length;
+          clues = mergeUnique(clues, batch);
+          if (clues.length === before) break;
+        } catch (err) {
+          if (
+            err instanceof CluesFetchError &&
+            isWaitAndRetryCode(err.code) &&
+            waits < MAX_RATE_LIMIT_WAITS
+          ) {
+            waits += 1;
+            await waitForRateLimit(
+              err.retryAfterSeconds,
+              clues.length,
+              err.code,
+            );
+            continue;
+          }
+          throw err;
         }
-
-        const batch = await fetchClueBatch({
-          topic: values.topic,
-          notes: values.notes,
-          exclude: clues.map((c) => c.answer),
-          count,
-        });
-
-        const before = clues.length;
-        clues = mergeUnique(clues, batch);
-
-        // Top-up returned nothing new — stop looping.
-        if (clues.length === before && round > 0) break;
       }
 
       if (clues.length < MIN_PUZZLE_WORDS) {
@@ -157,10 +224,13 @@ export function AppShell() {
 
       setPuzzle(packData.puzzle);
       setUserGrid(undefined);
+      setPendingGenerate(null);
       setPhase("play");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
-      setPhase("create");
+      setStatus("Couldn’t generate a puzzle");
+      setDetail("Stay here and retry — your topic is still selected.");
+      setPhase("generating");
     }
   }
 
@@ -191,7 +261,22 @@ export function AppShell() {
   }
 
   if (phase === "generating") {
-    return <GeneratingWait status={status} detail={detail} />;
+    return (
+      <GeneratingWait
+        status={status}
+        detail={detail}
+        error={error}
+        onRetry={
+          pendingGenerate
+            ? () => void handleGenerate(pendingGenerate)
+            : undefined
+        }
+        onCancel={() => {
+          setError(null);
+          setPhase("create");
+        }}
+      />
+    );
   }
 
   return (
@@ -205,7 +290,7 @@ export function AppShell() {
           Crosswords for any world you name.
         </h1>
         <p className="mt-4 max-w-lg text-lg text-[var(--ink-muted)]">
-          Pick a book, film, industry, language, or culture — we craft interlocking
+          Tap a topic spark below, or bring your own world — we craft interlocking
           clues you can solve in the browser.
         </p>
         <div className="mt-10">

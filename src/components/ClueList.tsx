@@ -12,8 +12,6 @@ type ClueListProps = {
   activeDir: Direction;
   activeNum: number | null;
   onSelect: (clue: ClueEntry, dir: Direction) => void;
-  mobileTab: Direction;
-  onMobileTabChange: (dir: Direction) => void;
 };
 
 function clueStatusKey(dir: Direction, num: number): string {
@@ -67,6 +65,7 @@ function ClueButton({
   );
 }
 
+/** Desktop sidebar clue list (Across + Down columns). Mobile uses CluesDrawer. */
 export function ClueList({
   puzzle,
   userGrid,
@@ -75,8 +74,6 @@ export function ClueList({
   activeDir,
   activeNum,
   onSelect,
-  mobileTab,
-  onMobileTabChange,
 }: ClueListProps) {
   const solvedKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -95,24 +92,7 @@ export function ClueList({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-3 flex gap-2 md:hidden">
-        {(["across", "down"] as const).map((dir) => (
-          <button
-            key={dir}
-            type="button"
-            onClick={() => onMobileTabChange(dir)}
-            className={`flex-1 rounded-md px-3 py-2 text-sm font-medium capitalize ${
-              mobileTab === dir
-                ? "bg-[var(--ink)] text-[var(--paper)]"
-                : "bg-black/5 text-[var(--ink-muted)]"
-            }`}
-          >
-            {dir}
-          </button>
-        ))}
-      </div>
-
-      <div className="hidden min-h-0 flex-1 gap-6 overflow-hidden md:grid md:grid-cols-2">
+      <div className="grid min-h-0 flex-1 grid-cols-2 gap-6 overflow-hidden">
         <section className="min-h-0 overflow-y-auto pr-1">
           <h3 className="mb-2 font-[family-name:var(--font-display)] text-lg tracking-tight text-[var(--ink)]">
             Across
@@ -149,22 +129,6 @@ export function ClueList({
             ))}
           </ul>
         </section>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto md:hidden">
-        <ul className="space-y-0.5">
-          {(mobileTab === "across" ? across : down).map((clue) => (
-            <li key={`m-${mobileTab}-${clue.num}`}>
-              <ClueButton
-                clue={clue}
-                dir={mobileTab}
-                active={activeDir === mobileTab && activeNum === clue.num}
-                solved={solvedKeys.has(clueStatusKey(mobileTab, clue.num))}
-                onSelect={onSelect}
-              />
-            </li>
-          ))}
-        </ul>
       </div>
     </div>
   );

@@ -9,9 +9,18 @@ const TIP_FADE_MS = 750;
 type GeneratingWaitProps = {
   status: string;
   detail: string;
+  error?: string | null;
+  onRetry?: () => void;
+  onCancel?: () => void;
 };
 
-export function GeneratingWait({ status, detail }: GeneratingWaitProps) {
+export function GeneratingWait({
+  status,
+  detail,
+  error = null,
+  onRetry,
+  onCancel,
+}: GeneratingWaitProps) {
   const [tipIndex, setTipIndex] = useState(
     () => Math.floor(Math.random() * GAMEPLAY_TIPS.length),
   );
@@ -52,9 +61,33 @@ export function GeneratingWait({ status, detail }: GeneratingWaitProps) {
           {status}
         </p>
         <p className="mt-3 text-[var(--ink-muted)]">{detail}</p>
-        <div className="mx-auto mt-8 h-1 w-40 overflow-hidden rounded-full bg-black/10">
-          <div className="progress-bar h-full w-1/2 rounded-full bg-[var(--accent)]" />
-        </div>
+        {error ? (
+          <div className="mt-8 flex w-full flex-col items-start rounded-md border border-[var(--danger)]/30 bg-red-50 px-4 py-3 text-left">
+            <p className="text-sm text-[var(--danger)]">{error}</p>
+            {onRetry ? (
+              <button
+                type="button"
+                className="btn-primary mt-4"
+                onClick={onRetry}
+              >
+                Try again
+              </button>
+            ) : null}
+            {onCancel ? (
+              <button
+                type="button"
+                className="mt-3 text-sm font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+                onClick={onCancel}
+              >
+                Choose a different topic
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="mx-auto mt-8 h-1 w-40 overflow-hidden rounded-full bg-black/10">
+            <div className="progress-bar h-full w-1/2 rounded-full bg-[var(--accent)]" />
+          </div>
+        )}
 
         <div className="mt-14 w-full text-left">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--accent)]">

@@ -103,6 +103,23 @@ export function getWordFillStatus(
 }
 
 /**
+ * True when the word in the other direction through this cell is fully filled.
+ * Clearing the current word must not wipe that shared letter.
+ */
+export function isProtectedCrossingCell(
+  puzzle: Puzzle,
+  userGrid: (string | null)[],
+  row: number,
+  col: number,
+  currentDir: Direction,
+): boolean {
+  const other: Direction = currentDir === "across" ? "down" : "across";
+  const clue = getClueAt(puzzle, row, col, other);
+  if (!clue) return false;
+  return getWordFillStatus(puzzle, userGrid, clue, other) !== "incomplete";
+}
+
+/**
  * Cell color state from completed words through that cell.
  * Incorrect wins over correct when across/down disagree.
  */

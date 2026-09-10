@@ -1,11 +1,15 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
 const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
-/** Faster default for Vercel’s 60s function budget; override with NVIDIA_MODEL. */
-const DEFAULT_MODEL = "minimaxai/minimax-m3";
+/**
+ * Catalog default (build.nvidia.com). Override with NVIDIA_MODEL.
+ * `deepseek-ai/deepseek-v4-flash` is retired (HTTP 410).
+ * NVIDIA_MODEL is inlined at Next.js build time — changing Vercel env requires a redeploy.
+ */
+export const DEFAULT_NVIDIA_MODEL = "deepseek-ai/deepseek-v4-pro-0813";
 
 export function getNvidiaModelId(): string {
-  return process.env.NVIDIA_MODEL?.trim() || DEFAULT_MODEL;
+  return process.env.NVIDIA_MODEL?.trim() || DEFAULT_NVIDIA_MODEL;
 }
 
 export function createNvidiaProvider() {

@@ -1,5 +1,19 @@
 import { NextResponse } from "next/server";
-import { topicBodySchema } from "@/lib/api/schemas";
+import {
+  ClueGenerateError,
+  classifyLlmError,
+  httpStatusForClueCode,
+  logClueError,
+  messageForClueCode,
+  nvidiaStatusFromError,
+  retryAfterSecondsFromError,
+} from "@/lib/ai/errors";
+import { getNvidiaModelId } from "@/lib/ai/nvidia";
+import {
+  CLUE_BATCH_SIZE,
+  isWaitAndRetryCode,
+  topicBodySchema,
+} from "@/lib/api/schemas";
 import { generateClueBank } from "@/lib/clues/generate";
 import { normalizeClues } from "@/lib/clues/normalize";
 import { STORMIGHT_FIXTURE_CLEAN } from "@/lib/crossword/fixtures";
@@ -14,7 +28,7 @@ export async function POST(request: Request) {
     body = topicBodySchema.parse(await request.json());
   } catch {
     return NextResponse.json(
-      { error: "Invalid request body", stage: "clues" },
+      { error: "Invalid request body", stage: "clues", code: "failed" },
       { status: 400 },
     );
   }
@@ -23,7 +37,7 @@ export async function POST(request: Request) {
   const exclude = normalizeClues(
     body.exclude.map((answer) => ({ answer, clue: answer })),
   ).map((c) => c.answer);
-  const count = body.count ?? (exclude.length > 0 ? 12 : 30);
+  const count = body.count ?? CLUE_BATCH_SIZE;
 
   try {
     if (!canUseNvidia) {
@@ -51,14 +65,14 @@ export async function POST(request: Request) {
     });
 
     if (clues.length === 0) {
+      const code = timedOut ? "timeout" : "empty";
       return NextResponse.json(
         {
-          error: timedOut
-            ? "Clue generation timed out before any clues arrived. Try again."
-            : "No valid clues generated. Try again.",
+          error: messageForClueCode(code),
           stage: "clues",
+          code,
         },
-        { status: timedOut ? 504 : 500 },
+        { status: httpStatusForClueCode(code) },
       );
     }
 
@@ -67,15 +81,50 @@ export async function POST(request: Request) {
       clues,
       meta: {
         usedFixture: false,
-        model: process.env.NVIDIA_MODEL?.trim() || "minimaxai/minimax-m3",
+        model: getNvidiaModelId(),
         clueCount: clues.length,
         timedOut,
         partial: timedOut || clues.length < count,
       },
     });
   } catch (error) {
+    const code =
+      error instanceof ClueGenerateError
+        ? error.code
+        : classifyLlmError(error);
+    const nvidiaStatus =
+      error instanceof ClueGenerateError
+        ? error.nvidiaStatus
+        : nvidiaStatusFromError(error);
     const message =
-      error instanceof Error ? error.message : "Failed to generate clues";
-    return NextResponse.json({ error: message, stage: "clues" }, { status: 500 });
+      error instanceof ClueGenerateError
+        ? error.message
+        : messageForClueCode(code, getNvidiaModelId());
+    const retryAfterSeconds =
+      error instanceof ClueGenerateError
+        ? error.retryAfterSeconds
+        : isWaitAndRetryCode(code)
+          ? retryAfterSecondsFromError(error)
+          : undefined;
+    if (!(error instanceof ClueGenerateError)) {
+      logClueError("POST /api/clues", error, code);
+    }
+    return NextResponse.json(
+      {
+        error: message,
+        stage: "clues",
+        code,
+        model: getNvidiaModelId(),
+        ...(nvidiaStatus != null ? { nvidiaStatus } : {}),
+        ...(retryAfterSeconds != null ? { retryAfterSeconds } : {}),
+      },
+      {
+        status: httpStatusForClueCode(code),
+        headers:
+          retryAfterSeconds != null
+            ? { "Retry-After": String(retryAfterSeconds) }
+            : undefined,
+      },
+    );
   }
 }

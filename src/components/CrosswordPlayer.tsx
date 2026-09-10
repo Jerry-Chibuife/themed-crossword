@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ClueList } from "@/components/ClueList";
+import { CluesSheet } from "@/components/CluesSheet";
 import { CrosswordGrid } from "@/components/CrosswordGrid";
 import {
   clueCells,
   emptyUserGrid,
   getClueAt,
+  isProtectedCrossingCell,
   isPuzzleComplete,
   nextOpenCell,
 } from "@/lib/crossword/helpers";
@@ -38,14 +40,20 @@ export function CrosswordPlayer({
   );
   const [selected, setSelected] = useState(() => firstLetterCell(puzzle));
   const [direction, setDirection] = useState<Direction>("across");
-  const [mobileTab, setMobileTab] = useState<Direction>("across");
+  const [drawerTab, setDrawerTab] = useState<Direction>("across");
+  const [cluesOpen, setCluesOpen] = useState(false);
   const [checked, setChecked] = useState(false);
-  const [complete, setComplete] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cluesButtonRef = useRef<HTMLButtonElement>(null);
+  const wasCluesOpenRef = useRef(false);
 
   const activeClue = useMemo(
     () => getClueAt(puzzle, selected.row, selected.col, direction),
     [puzzle, selected, direction],
+  );
+  const complete = useMemo(
+    () => isPuzzleComplete(puzzle, userGrid),
+    [puzzle, userGrid],
   );
 
   function focusInput() {
@@ -53,14 +61,39 @@ export function CrosswordPlayer({
     inputRef.current?.focus({ preventScroll: true });
   }
 
+  function blurInput() {
+    inputRef.current?.blur();
+  }
+
   useEffect(() => {
     saveSession({ puzzle, userGrid, updatedAt: Date.now() });
-    setComplete(isPuzzleComplete(puzzle, userGrid));
   }, [puzzle, userGrid]);
 
   useEffect(() => {
+    if (cluesOpen) {
+      wasCluesOpenRef.current = true;
+      return;
+    }
+    // Sheet just closed — Clues button regains focus; skip soft-keyboard steal.
+    if (wasCluesOpenRef.current) {
+      wasCluesOpenRef.current = false;
+      return;
+    }
     focusInput();
-  }, [selected, direction]);
+  }, [selected, direction, cluesOpen]);
+
+  function openCluesSheet() {
+    setDrawerTab(direction);
+    blurInput();
+    setCluesOpen(true);
+  }
+
+  function closeCluesSheet() {
+    setCluesOpen(false);
+    window.requestAnimationFrame(() => {
+      cluesButtonRef.current?.focus();
+    });
+  }
 
   function move(delta: 1 | -1) {
     const next = nextOpenCell(
@@ -118,7 +151,17 @@ export function CrosswordPlayer({
 
     if (event.key === "Backspace" || event.key === "Delete") {
       event.preventDefault();
-      writeLetter("");
+      if (
+        !isProtectedCrossingCell(
+          puzzle,
+          userGrid,
+          selected.row,
+          selected.col,
+          direction,
+        )
+      ) {
+        writeLetter("");
+      }
       move(-1);
       return;
     }
@@ -164,7 +207,7 @@ export function CrosswordPlayer({
 
   function handleSelectClue(clue: ClueEntry, dir: Direction) {
     setDirection(dir);
-    setMobileTab(dir);
+    setDrawerTab(dir);
     setSelected({ row: clue.row, col: clue.col });
     focusInput();
   }
@@ -196,7 +239,7 @@ export function CrosswordPlayer({
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:py-10">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      <header className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--accent)]">
             Themed Crossword
@@ -214,7 +257,8 @@ export function CrosswordPlayer({
             </p>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* Below lg, clues use a bottom sheet — keep actions under the title. */}
+        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
           <button
             type="button"
             className="btn-secondary"
@@ -233,6 +277,16 @@ export function CrosswordPlayer({
           </button>
           <button type="button" className="btn-primary" onClick={onNewPuzzle}>
             New puzzle
+          </button>
+          <button
+            ref={cluesButtonRef}
+            type="button"
+            className="btn-secondary ml-auto lg:hidden"
+            aria-haspopup="dialog"
+            aria-expanded={cluesOpen}
+            onClick={openCluesSheet}
+          >
+            Clues
           </button>
         </div>
       </header>
@@ -270,7 +324,7 @@ export function CrosswordPlayer({
 
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
         <div
-          className="flex justify-center lg:justify-start"
+          className="min-w-0 w-full max-w-full overflow-hidden"
           onMouseDown={(event) => {
             // Keep focus on the hidden input when tapping grid cells (desktop + mobile).
             if ((event.target as HTMLElement).closest("button")) {
@@ -287,7 +341,7 @@ export function CrosswordPlayer({
             onSelect={handleSelectCell}
           />
         </div>
-        <div className="min-h-[280px] lg:h-[calc(100dvh-11rem)] lg:min-h-0">
+        <div className="hidden min-h-[280px] min-w-0 lg:block lg:h-[calc(100dvh-11rem)] lg:min-h-0">
           <ClueList
             puzzle={puzzle}
             userGrid={userGrid}
@@ -296,14 +350,23 @@ export function CrosswordPlayer({
             activeDir={direction}
             activeNum={activeClue?.num ?? null}
             onSelect={handleSelectClue}
-            mobileTab={mobileTab}
-            onMobileTabChange={(dir) => {
-              setMobileTab(dir);
-              focusInput();
-            }}
           />
         </div>
       </div>
+
+      <CluesSheet
+        open={cluesOpen}
+        onClose={closeCluesSheet}
+        puzzle={puzzle}
+        userGrid={userGrid}
+        across={puzzle.clues.across}
+        down={puzzle.clues.down}
+        activeDir={direction}
+        activeNum={activeClue?.num ?? null}
+        tab={drawerTab}
+        onTabChange={setDrawerTab}
+        onSelect={handleSelectClue}
+      />
     </div>
   );
 }

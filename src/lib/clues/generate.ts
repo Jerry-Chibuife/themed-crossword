@@ -1,10 +1,20 @@
-import { streamText } from "ai";
+import { generateText } from "ai";
+import {
+  ClueGenerateError,
+  classifyLlmError,
+  logClueError,
+  messageForClueCode,
+  nvidiaStatusFromError,
+  retryAfterSecondsFromError,
+} from "@/lib/ai/errors";
 import { getNvidiaLanguageModel } from "@/lib/ai/nvidia";
-import { normalizeClues } from "@/lib/clues/normalize";
+import { CLUE_BATCH_SIZE } from "@/lib/api/schemas";
+import { MAX_ANSWER_LENGTH, MIN_ANSWER_LENGTH } from "@/lib/clues/limits";
+import { answersConflict, normalizeClues, preferAnswer } from "@/lib/clues/normalize";
 import { clueCandidateSchema } from "@/lib/clues/schema";
 import type { ClueCandidate } from "@/lib/crossword/types";
 
-const LLM_TIMEOUT_MS = 52_000;
+const LLM_TIMEOUT_MS = 45_000;
 
 export type GenerateClueOptions = {
   /** Answers the model must not reuse. */
@@ -35,21 +45,26 @@ function buildPrompt(
 Topic: ${topic}
 ${notesBlock}${excludeBlock}
 Output format — STRICT:
-- Return ONLY newline-delimited JSON (NDJSON).
-- One clue object per line. No array wrapper. No markdown fences. No commentary.
-- Exactly this shape per line: {"answer":"WORD","clue":"short clue"}
+- Return ONLY JSON: either newline-delimited objects (NDJSON) or a JSON array.
+- One clue object per line or array item. No markdown fences. No commentary.
+- Exactly this shape: {"answer":"WORD","clue":"short clue"}
 
 Rules:
 - Emit ${count} lines as fast as possible.
-- answer: letters A-Z only after dropping spaces/punctuation, length 3-15.
-- Prefer single words; multi-word phrases omit spaces (e.g. BRIDGEFOUR).
+- answer: letters A-Z only after dropping spaces/punctuation, length ${MIN_ANSWER_LENGTH}-${MAX_ANSWER_LENGTH}.
+- Multi-word titles: concatenate ALL words with no spaces (OLDTOWNROAD, UPTOWNFUNK, BRIDGEFOUR).
+  Never drop a word or syllable to shorten (not OLDTOWN, not UPTOFUNK).
+- If the full letters-only title/name is longer than ${MAX_ANSWER_LENGTH}, SKIP that entry.
+  Never truncate, nickname, abbreviate, or respell to fit.
+- Use correct standard spellings only. No phonetic/slang forms
+  (THUNDER not THUNDA; DYNAMITE not DYNAMIT; SHALLOW not SHALOW).
+- Answers must be primary entities of the topic. For song/chart topics: song titles —
+  not fan nicknames (not BELIEBER), not artists unless the topic is artists.
 - clue: max 50 characters, crossword-style; avoid major spoilers.
 - Tightly related to the topic.
-- No duplicate answers — every answer string must be unique.
-- Keep FULL proper nouns and names. Never truncate or nickname them
-  (use OPPENHEIMER not OPPEN; KALADIN not KAL; DALINAR not DAL).
-- Do not invent abbreviations of real names just to make answers shorter.
-- Mid-length common nouns are fine; names must stay complete within 15 letters.
+- No duplicate or near-duplicate answers for the same work under different spellings
+  (not both DESPACITO and DESPA; not both SHALLOW and SHALOW).
+- Keep FULL proper nouns and names (OPPENHEIMER not OPPEN; KALADIN not KAL).
 - Start emitting lines immediately. No preamble.`;
 }
 
@@ -60,13 +75,14 @@ function parseClueObject(raw: unknown): ClueCandidate | null {
   return normalized ?? null;
 }
 
-function extractObjectsFromText(text: string): ClueCandidate[] {
+export function extractObjectsFromText(text: string): ClueCandidate[] {
+  const cleaned = text.replace(/```(?:json)?/gi, "");
   const out: ClueCandidate[] = [];
   const seen = new Set<string>();
   let i = 0;
 
-  while (i < text.length) {
-    if (text[i] !== "{") {
+  while (i < cleaned.length) {
+    if (cleaned[i] !== "{") {
       i += 1;
       continue;
     }
@@ -76,8 +92,8 @@ function extractObjectsFromText(text: string): ClueCandidate[] {
     let escaped = false;
     let end = -1;
 
-    for (let j = i; j < text.length; j++) {
-      const ch = text[j]!;
+    for (let j = i; j < cleaned.length; j++) {
+      const ch = cleaned[j]!;
       if (inString) {
         if (escaped) {
           escaped = false;
@@ -105,7 +121,7 @@ function extractObjectsFromText(text: string): ClueCandidate[] {
 
     if (end === -1) break;
 
-    const slice = text.slice(i, end + 1);
+    const slice = cleaned.slice(i, end + 1);
     i = end + 1;
 
     try {
@@ -138,11 +154,11 @@ function extractObjectsFromText(text: string): ClueCandidate[] {
   }
 
   if (out.length === 0) {
-    const startArr = text.indexOf("[");
-    const endArr = text.lastIndexOf("]");
+    const startArr = cleaned.indexOf("[");
+    const endArr = cleaned.lastIndexOf("]");
     if (startArr !== -1 && endArr > startArr) {
       try {
-        const arr = JSON.parse(text.slice(startArr, endArr + 1)) as unknown;
+        const arr = JSON.parse(cleaned.slice(startArr, endArr + 1)) as unknown;
         if (Array.isArray(arr)) {
           for (const item of arr) {
             const clue = parseClueObject(item);
@@ -160,7 +176,7 @@ function extractObjectsFromText(text: string): ClueCandidate[] {
   return out;
 }
 
-function mergeClues(
+export function mergeClues(
   into: ClueCandidate[],
   seen: Set<string>,
   next: ClueCandidate[],
@@ -168,18 +184,26 @@ function mergeClues(
 ): void {
   for (const clue of next) {
     if (exclude.has(clue.answer) || seen.has(clue.answer)) continue;
-    seen.add(clue.answer);
-    into.push(clue);
-  }
-}
+    if ([...exclude].some((existing) => answersConflict(clue.answer, existing))) {
+      continue;
+    }
 
-function isAbortError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (error.name === "AbortError" ||
-      error.name === "TimeoutError" ||
-      /abort/i.test(error.message))
-  );
+    const conflictIndex = into.findIndex((existing) =>
+      answersConflict(clue.answer, existing.answer),
+    );
+    if (conflictIndex === -1) {
+      seen.add(clue.answer);
+      into.push(clue);
+      continue;
+    }
+
+    const current = into[conflictIndex]!;
+    const winner = preferAnswer(current, clue);
+    if (winner.answer === current.answer) continue;
+    seen.delete(current.answer);
+    seen.add(winner.answer);
+    into[conflictIndex] = winner;
+  }
 }
 
 export type GenerateClueResult = {
@@ -188,8 +212,9 @@ export type GenerateClueResult = {
 };
 
 /**
- * Stream clues from NVIDIA. Returns whatever unique new clues we got —
- * including a partial batch on timeout — so the client can top up.
+ * One NVIDIA call per request. Do not retry 429/503 here — the client waits
+ * and retries inside the same Generate. Set maxRetries: 0 so the SDK does not
+ * burn quota on automatic retries.
  */
 export async function generateClueBank(
   topic: string,
@@ -201,62 +226,52 @@ export async function generateClueBank(
   ).map((c) => c.answer);
   const exclude = new Set(excludeList);
 
-  const count = options.count ?? 30;
+  const count = options.count ?? CLUE_BATCH_SIZE;
   const softStop = options.softStop ?? count;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
 
-  const collected: ClueCandidate[] = [];
-  const seen = new Set<string>();
-  let buffer = "";
-  let timedOut = false;
-  let reachedSoftStop = false;
-
   try {
-    const result = streamText({
+    const result = await generateText({
       model: getNvidiaLanguageModel(),
       prompt: buildPrompt(topic, notes, count, excludeList),
       temperature: 0.4,
-      maxOutputTokens: Math.min(2400, 80 * count),
+      maxRetries: 0,
+      maxOutputTokens: Math.max(1800, 250 * count),
       abortSignal: controller.signal,
     });
 
-    for await (const chunk of result.textStream) {
-      buffer += chunk;
-      mergeClues(
-        collected,
-        seen,
-        extractObjectsFromText(buffer),
-        exclude,
-      );
+    const collected: ClueCandidate[] = [];
+    const seen = new Set<string>();
+    mergeClues(
+      collected,
+      seen,
+      extractObjectsFromText(result.text ?? ""),
+      exclude,
+    );
 
-      if (collected.length >= softStop) {
-        reachedSoftStop = true;
-        controller.abort();
-        break;
-      }
+    const clues = normalizeClues(collected).slice(0, Math.max(softStop, count));
+    if (clues.length > 0) {
+      return { clues, timedOut: false };
     }
 
-    mergeClues(collected, seen, extractObjectsFromText(buffer), exclude);
+    throw new ClueGenerateError("empty", messageForClueCode("empty"));
   } catch (error) {
-    mergeClues(collected, seen, extractObjectsFromText(buffer), exclude);
-
-    if (reachedSoftStop) {
-      // intentional early stop
-    } else if (isAbortError(error)) {
-      timedOut = true;
-    } else if (collected.length === 0) {
-      throw error instanceof Error
-        ? error
-        : new Error("Failed to generate clues");
-    } else {
-      // Non-abort error but we have some clues — return partial.
-      timedOut = true;
-    }
+    if (error instanceof ClueGenerateError) throw error;
+    const code = classifyLlmError(error);
+    logClueError("generateClueBank", error, code);
+    const retryAfter =
+      code === "rate_limited" || code === "overloaded"
+        ? retryAfterSecondsFromError(error)
+        : undefined;
+    throw new ClueGenerateError(
+      code,
+      messageForClueCode(code),
+      nvidiaStatusFromError(error),
+      retryAfter,
+    );
   } finally {
     clearTimeout(timeout);
   }
-
-  return { clues: collected, timedOut };
 }
